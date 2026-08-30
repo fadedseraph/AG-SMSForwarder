@@ -149,18 +149,23 @@ class TransactionAiFormatter private constructor(private val context: Context) {
     }
 
     /**
-     * Strict Gemma turn prompt with clear distinction between transactions and OTP/SKIP alerts.
+     * Strict Gemma turn prompt with support for purchases, balance updates (e.g. Chime), and OTP skips.
      */
     private fun buildFewShotPrompt(systemPrompt: String, input: String): String {
         return buildString {
             append("<start_of_turn>user\n")
-            append("You are a financial transaction alert parser.\n")
-            append("Rule 1: If the notification is a purchase/charge/debit, output ONLY in this format: '<Bank>: $<Amount> spent at <Merchant>'\n")
+            append("You are a financial notification alert parser.\n")
+            append("Rule 1: If the alert is a purchase/charge/debit, output ONLY in this format: '<Bank>: $<Amount> spent at <Merchant>'\n")
             append("Rule 2: If card digits are mentioned, append 'on card <Digits>'.\n")
-            append("Rule 3: If the alert is a verification code, OTP, security alert, login notification, or has NO money amount, you MUST output ONLY the single word: SKIP\n\n")
+            append("Rule 3: If the alert is an account balance update (e.g. money update, balance is), output: '<Bank>: Balance is $<Amount>'\n")
+            append("Rule 4: If the alert is a verification code, OTP, security alert, login notification, or has NO money amount, you MUST output ONLY the single word: SKIP\n\n")
             append("Alert: Chase Mobile: Debit ending in 4102 charged \$42.50 at Trader Joe's.<end_of_turn>\n")
             append("<start_of_turn>model\n")
             append("Chase: \$42.50 spent at Trader Joe's on card 4102<end_of_turn>\n")
+            append("<start_of_turn>user\n")
+            append("Alert: Chime: Here's your morning money update: your checking balance is \$245.80.<end_of_turn>\n")
+            append("<start_of_turn>model\n")
+            append("Chime: Balance is \$245.80<end_of_turn>\n")
             append("<start_of_turn>user\n")
             append("Alert: Bank of America: Alert: \$120.00 debit card purchase at SHELL OIL 5744.<end_of_turn>\n")
             append("<start_of_turn>model\n")
@@ -205,7 +210,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             return FormattedTransaction.SKIP.copy(isAiGenerated = true, latencyMs = latencyMs)
         }
 
-        // 2. Anti-Hallucination Check for Non-Transaction / OTP alerts
+        // 2. Anti-Hallucination Check for Non-Transaction / OTP alerts without money amount
         val inputLower = rawInput.lowercase()
         val isNonTransactionPattern = inputLower.contains("code") ||
                 inputLower.contains("otp") ||
@@ -256,14 +261,38 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                 val bankCandidate = candidate.substringBefore(":").trim()
                 val finalBank = if (bankCandidate.length in 2..30 &&
                     !bankCandidate.contains("Amount", ignoreCase = true) &&
-                    !bankCandidate.contains("Bank", ignoreCase = true)
+                    !bankCandidate.contains("Bank", ignoreCase = true) &&
+                    !bankCandidate.contains("Balance", ignoreCase = true)
                 ) {
                     bankCandidate
+                } else if (rawInput.contains("chime", ignoreCase = true)) {
+                    "Chime"
                 } else {
                     defaultBankName.removeSuffix("Mobile").removeSuffix("App").trim().ifBlank { "Bank Alert" }
                 }
 
                 val afterColon = candidate.substringAfter(":", "").trim().ifBlank { candidate }
+
+                // Check if this is a balance update (e.g. Chime morning money update)
+                val isBalanceUpdate = candidate.contains("balance is", ignoreCase = true) ||
+                        candidate.contains("balance update", ignoreCase = true) ||
+                        candidate.contains("balance:", ignoreCase = true) ||
+                        rawInput.contains("money update", ignoreCase = true) ||
+                        rawInput.contains("balance is", ignoreCase = true)
+
+                if (isBalanceUpdate) {
+                    val formatted = "$finalBank: Balance is \$$amt"
+                    return FormattedTransaction(
+                        bank = finalBank,
+                        amount = amt,
+                        merchant = "Account Balance",
+                        isTransaction = true,
+                        formattedMessage = formatted,
+                        isAiGenerated = true,
+                        latencyMs = latencyMs
+                    )
+                }
+
                 val merchantCandidate = when {
                     afterColon.contains("spent at ", ignoreCase = true) -> afterColon.substringAfter("spent at ")
                     afterColon.contains("at ", ignoreCase = true) -> afterColon.substringAfter("at ")

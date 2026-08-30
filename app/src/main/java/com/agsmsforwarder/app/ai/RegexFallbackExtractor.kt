@@ -9,7 +9,7 @@ object RegexFallbackExtractor {
     private val AMOUNT_PATTERNS = listOf(
         Pattern.compile("""(?:\$|USD\s*|CAD\s*|AUD\s*|EUR\s*|€|GBP\s*|£|INR\s*|₹)\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)""", Pattern.CASE_INSENSITIVE),
         Pattern.compile("""([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)\s*(?:USD|CAD|AUD|EUR|GBP|INR)""", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("""(?:amount|for|spent|paid|purchase of|debit of|charged)\s*(?:of)?\s*\$?([0-9]+(?:\.[0-9]{2})?)""", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("""(?:amount|for|spent|paid|purchase of|debit of|charged|balance is|balance of)\s*(?:of)?\s*\$?([0-9]+(?:\.[0-9]{2})?)""", Pattern.CASE_INSENSITIVE)
     )
 
     // Regex patterns for detecting merchant name after keywords like "at", "to", "from"
@@ -75,6 +75,25 @@ object RegexFallbackExtractor {
             return FormattedTransaction.SKIP
         }
 
+        // Check if balance update alert (e.g. Chime morning money update)
+        val isBalanceUpdate = lower.contains("balance is") ||
+                lower.contains("money update") ||
+                lower.contains("checking balance") ||
+                lower.contains("account balance")
+
+        if (isBalanceUpdate) {
+            val formattedMsg = "$bank: Balance is $$amount"
+            return FormattedTransaction(
+                bank = bank,
+                amount = amount,
+                merchant = "Account Balance",
+                isTransaction = true,
+                formattedMessage = formattedMsg,
+                isAiGenerated = false,
+                latencyMs = 1L
+            )
+        }
+
         // 4. Extract Merchant Name
         var merchant: String? = null
         for (pattern in MERCHANT_PATTERNS) {
@@ -104,6 +123,7 @@ object RegexFallbackExtractor {
 
     private fun resolveBankName(packageName: String, title: String, combinedText: String): String {
         return when {
+            packageName.contains("chime", ignoreCase = true) || combinedText.contains("chime", ignoreCase = true) -> "Chime"
             packageName.contains("chase", ignoreCase = true) || combinedText.contains("chase", ignoreCase = true) -> "Chase"
             packageName.contains("bofa", ignoreCase = true) || combinedText.contains("bank of america", ignoreCase = true) -> "Bank of America"
             packageName.contains("wellsfargo", ignoreCase = true) || combinedText.contains("wells fargo", ignoreCase = true) -> "Wells Fargo"
@@ -133,6 +153,7 @@ object RegexFallbackExtractor {
                 word.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
             }
         }
-        return clean.trim()
+
+        return clean
     }
 }

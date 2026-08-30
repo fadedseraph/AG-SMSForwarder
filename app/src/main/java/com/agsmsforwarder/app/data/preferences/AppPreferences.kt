@@ -5,7 +5,8 @@ data class AppPreferences(
     val enabledPackages: Set<String> = setOf(
         "com.chase.sig.android",
         "com.infonow.bofa",
-        "com.wf.wellsfargomobile"
+        "com.wf.wellsfargomobile",
+        "com.onedebit.chime"
     ),
     val destinationPhoneNumber: String = "",
     val useAiFormatting: Boolean = true,
@@ -18,7 +19,9 @@ data class AppPreferences(
 ) {
     companion object {
         const val DEFAULT_SYSTEM_PROMPT =
-            "You are a transaction parser. Extract the bank, amount, and clean merchant name from the notification text. " +
-            "Output ONLY in this format: '[Bank]: $[Amount] spent at [Merchant]'. If not a transaction, output 'SKIP'."
+            "You are a financial notification alert parser. Extract the bank name, amount, and merchant. " +
+            "For purchases, output: '[Bank]: $[Amount] spent at [Merchant]'. " +
+            "For balance updates, output: '[Bank]: Balance is $[Amount]'. " +
+            "If not a transaction or balance update, output 'SKIP'."
     }
 }

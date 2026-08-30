@@ -126,6 +126,10 @@ fun LiveTestPlayground(
                     testTitle = "Wells Fargo"
                     testText = "Your one-time verification code is 849201 for login."
                 }
+                PresetChip(label = "Chime Balance") {
+                    testTitle = "Chime"
+                    testText = "Here's your morning money update: your checking balance is $245.80."
+                }
                 PresetChip(label = "Amex $89.99") {
                     testTitle = "American Express"
                     testText = "Purchase authorized: $89.99 at AMAZON.COM on card 4091."

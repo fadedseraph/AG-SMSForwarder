@@ -12,6 +12,7 @@ data class AppPreset(
             AppPreset("chase", "Chase Mobile", "com.chase.sig.android", true, "Major US Bank"),
             AppPreset("bofa", "Bank of America", "com.infonow.bofa", true, "Major US Bank"),
             AppPreset("wellsfargo", "Wells Fargo Mobile", "com.wf.wellsfargomobile", true, "Major US Bank"),
+            AppPreset("chime", "Chime", "com.onedebit.chime", true, "Fintech & Banking"),
             AppPreset("citi", "Citi Mobile", "com.citi.citimobile", false, "Major US Bank"),
             AppPreset("capitalone", "Capital One Mobile", "com.konylabs.capitalone", false, "Credit Cards"),
             AppPreset("amex", "American Express", "com.americanexpress.android.acctsvcs.us", false, "Credit Cards"),
