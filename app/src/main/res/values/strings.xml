@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">AI Bank Forwarder</string>
+    <string name="notification_listener_service_name">Bank Notification Listener</string>
+    <string name="notification_listener_service_description">Monitors incoming banking notifications and reformats them using on-device AI for SMS forwarding.</string>
+</resources>
