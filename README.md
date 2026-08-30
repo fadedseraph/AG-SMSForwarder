@@ -1,7 +1,7 @@
 # VaultPulse — On-Device AI Financial Notification Forwarder
 
 <div align="center">
-  <img src="stitch_vaultpulse_financial_forwarder/logo/screen.png" alt="VaultPulse Logo" width="128" height="128" style="border-radius: 28px;" />
+  <img src="docs/assets/logo.png" alt="VaultPulse Logo" width="128" height="128" style="border-radius: 28px;" />
   <h3>Privacy-First On-Device Financial Intelligence & SMS Routing Engine</h3>
 
   [![Android](https://img.shields.io/badge/Platform-Android_8.0+_(API_26–35)-3DDC84?logo=android&logoColor=white)](#)
@@ -106,7 +106,8 @@ AG-SMSForwarder/
 │   │   └── res/
 │   │       ├── drawable/                       # Vector assets & VaultPulse logo
 │   │       └── mipmap-*/                       # High-res adaptive launcher icons
-└── stitch_vaultpulse_financial_forwarder/      # Google Stitch design specifications
+└── docs/
+    └── assets/                                 # Documentation brand assets
 ```
 
 ---
