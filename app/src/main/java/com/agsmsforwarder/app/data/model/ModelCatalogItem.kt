@@ -13,34 +13,44 @@ data class ModelCatalogItem(
     companion object {
         val PRESET_MODELS = listOf(
             ModelCatalogItem(
-                id = "gemma-2b-it-cpu-int4",
-                title = "Gemma 2B IT (CPU INT4)",
-                description = "Google's lightweight 2B instruction-tuned model optimized for CPU inference with MediaPipe.",
-                sizeLabel = "~1.3 GB",
-                downloadUrl = "https://huggingface.co/google/gemma-2b-it-cpu-int4/resolve/main/gemma-2b-it-cpu-int4.bin",
+                id = "gemma-2b-it-cpu-int4-open",
+                title = "Gemma 2B IT (CPU INT4) [Open Mirror]",
+                description = "Pre-quantized 4-bit CPU model ready for instant download without needing a HuggingFace account.",
+                sizeLabel = "~1.35 GB",
+                downloadUrl = "https://huggingface.co/xianbao/mediapipe-gemma-2b-it/resolve/main/gemma-2b-it-cpu-int4.bin",
+                fileName = "gemma-2b-it-cpu-int4.bin",
+                isGatedHuggingFace = false,
+                recommendedFor = "Instant 1-Tap Download (No Token Required)"
+            ),
+            ModelCatalogItem(
+                id = "gemma-2b-it-cpu-int4-google",
+                title = "Google Gemma 2B IT (CPU INT4) [Official]",
+                description = "Official Google LiteRT/MediaPipe 4-bit CPU weights from google/gemma-2b-it-tflite.",
+                sizeLabel = "~1.35 GB",
+                downloadUrl = "https://huggingface.co/google/gemma-2b-it-tflite/resolve/main/gemma-2b-it-cpu-int4.bin",
                 fileName = "gemma-2b-it-cpu-int4.bin",
                 isGatedHuggingFace = true,
-                recommendedFor = "Recommended for most Android devices (CPU)"
+                recommendedFor = "Official Google Weights (Requires HF Token)"
             ),
             ModelCatalogItem(
-                id = "gemma-2b-it-gpu-int4",
-                title = "Gemma 2B IT (GPU INT4)",
-                description = "Google's 2B instruction-tuned model with GPU/OpenCL acceleration for ultra-fast latency.",
-                sizeLabel = "~1.3 GB",
-                downloadUrl = "https://huggingface.co/google/gemma-2b-it-gpu-int4/resolve/main/gemma-2b-it-gpu-int4.bin",
+                id = "gemma-2b-it-gpu-int4-google",
+                title = "Google Gemma 2B IT (GPU INT4) [Official]",
+                description = "Official Google LiteRT/MediaPipe GPU/OpenCL accelerated model for ultra-low latency.",
+                sizeLabel = "~1.35 GB",
+                downloadUrl = "https://huggingface.co/google/gemma-2b-it-tflite/resolve/main/gemma-2b-it-gpu-int4.bin",
                 fileName = "gemma-2b-it-gpu-int4.bin",
                 isGatedHuggingFace = true,
-                recommendedFor = "Modern devices with Adreno / Mali GPUs"
+                recommendedFor = "Adreno / Mali GPU Acceleration (Requires HF Token)"
             ),
             ModelCatalogItem(
-                id = "gemma-3-1b-it",
-                title = "Gemma 3 1B IT (LiteRT / MediaPipe)",
-                description = "Ultra-compact 1B parameter model with minimal RAM footprint and fast response times.",
-                sizeLabel = "~950 MB",
-                downloadUrl = "https://huggingface.co/google/gemma-3-1b-it/resolve/main/gemma-3-1b-it.bin",
-                fileName = "gemma-3-1b-it.bin",
+                id = "gemma-2b-it-cpu-int8-google",
+                title = "Google Gemma 2B IT (CPU INT8) [Official]",
+                description = "Higher fidelity 8-bit quantization for devices with 8GB+ RAM.",
+                sizeLabel = "~2.6 GB",
+                downloadUrl = "https://huggingface.co/google/gemma-2b-it-tflite/resolve/main/gemma-2b-it-cpu-int8.bin",
+                fileName = "gemma-2b-it-cpu-int8.bin",
                 isGatedHuggingFace = true,
-                recommendedFor = "Low-RAM / Budget devices"
+                recommendedFor = "Higher Accuracy / 8GB+ RAM (Requires HF Token)"
             )
         )
     }

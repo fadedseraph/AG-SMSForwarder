@@ -66,24 +66,33 @@ class ModelDownloadManager(private val context: Context) {
         var outputStream: FileOutputStream? = null
 
         try {
-            var currentUrl = urlStr
+            var currentUrl = urlStr.trim()
             var redirects = 0
-            val maxRedirects = 6
+            val maxRedirects = 8
 
-            // Handle HTTP 3xx Redirects (standard for HuggingFace CDN)
+            // Handle HTTP 3xx Redirects (standard for HuggingFace LFS CDN / CloudFront)
             while (redirects < maxRedirects) {
                 val url = URL(currentUrl)
+                val host = url.host.lowercase()
+
                 connection = (url.openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 20_000
-                    readTimeout = 30_000
+                    connectTimeout = 25_000
+                    readTimeout = 40_000
                     instanceFollowRedirects = false
                     setRequestProperty("User-Agent", "AG-SMSForwarder/1.0 (Android)")
-                    if (!bearerToken.isNullOrBlank()) {
-                        setRequestProperty("Authorization", "Bearer ${bearerToken.trim()}")
+                    
+                    // CRITICAL: Only send Hugging Face Authorization header to huggingface.co API / resolve endpoints.
+                    // DO NOT forward Authorization header to CDN / CloudFront / S3 (cdn-lfs.huggingface.co or amazonaws.com),
+                    // as AWS presigned URLs reject requests containing both signature params and Authorization headers.
+                    if (!bearerToken.isNullOrBlank() && host == "huggingface.co") {
+                        val token = bearerToken.trim().removePrefix("Bearer ").trim()
+                        setRequestProperty("Authorization", "Bearer $token")
                     }
                 }
 
                 val responseCode = connection.responseCode
+                Log.d(TAG, "HTTP $responseCode from $currentUrl")
+
                 if (responseCode in 300..399) {
                     val location = connection.getHeaderField("Location")
                     if (location.isNullOrBlank()) {
@@ -95,9 +104,14 @@ class ModelDownloadManager(private val context: Context) {
                 } else if (responseCode in 200..299) {
                     break
                 } else if (responseCode == 401 || responseCode == 403) {
-                    throw IllegalStateException("Access Denied (HTTP $responseCode). If downloading from Hugging Face, please supply a User Access Token.")
+                    throw IllegalStateException(
+                        "Access Denied (HTTP $responseCode). For official Google Gemma models on HuggingFace:\n" +
+                        "1. Verify you accepted Google's license at huggingface.co/google/gemma-2b-it-tflite\n" +
+                        "2. Paste a valid Hugging Face Read Token (hf_...)\n" +
+                        "Or use the 'Open Mirror' model which requires no account."
+                    )
                 } else if (responseCode == 404) {
-                    throw IllegalStateException("File not found (HTTP 404). Please verify the URL.")
+                    throw IllegalStateException("File not found (HTTP 404) at: $currentUrl. Please verify the URL.")
                 } else {
                     throw IllegalStateException("Server returned HTTP $responseCode: ${connection.responseMessage}")
                 }
@@ -111,7 +125,7 @@ class ModelDownloadManager(private val context: Context) {
             inputStream = connection?.inputStream ?: throw IllegalStateException("Input stream is null")
             outputStream = FileOutputStream(tempFile)
 
-            val buffer = ByteArray(64 * 1024) // 64 KB buffer
+            val buffer = ByteArray(64 * 1024) // 64 KB chunk buffer
             var bytesRead: Int
             var totalDownloaded = 0L
             var lastUpdateTime = System.currentTimeMillis()
@@ -129,7 +143,7 @@ class ModelDownloadManager(private val context: Context) {
 
                 val now = System.currentTimeMillis()
                 val elapsed = now - lastUpdateTime
-                if (elapsed >= 500) { // Update UI twice per second
+                if (elapsed >= 400) { // Update progress 2.5 times per second
                     val speedBytesPerSec = (bytesSinceLastUpdate * 1000) / elapsed
                     currentSpeedText = formatSpeed(speedBytesPerSec)
                     val progressPct = if (totalBytes > 0) totalDownloaded.toFloat() / totalBytes else 0f
@@ -156,7 +170,7 @@ class ModelDownloadManager(private val context: Context) {
                 targetFile.delete()
             }
             if (!tempFile.renameTo(targetFile)) {
-                // Fallback copy if rename fails
+                // Fallback copy if rename fails across file systems
                 tempFile.copyTo(targetFile, overwrite = true)
                 tempFile.delete()
             }
@@ -165,7 +179,7 @@ class ModelDownloadManager(private val context: Context) {
             Log.i(TAG, "Model downloaded successfully to ${targetFile.absolutePath} (${targetFile.length()} bytes)")
             Result.success(targetFile)
         } catch (e: CancellationException) {
-            Log.w(TAG, "Download cancelled")
+            Log.w(TAG, "Download cancelled by user")
             tempFile.delete()
             _downloadState.value = DownloadState.Idle
             Result.failure(e)

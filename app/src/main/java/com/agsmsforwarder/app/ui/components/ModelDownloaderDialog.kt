@@ -185,13 +185,15 @@ fun ModelDownloaderDialog(
                                             Text(
                                                 text = model.title,
                                                 style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.weight(1f)
                                             )
                                             Text(
                                                 text = model.sizeLabel,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.primary,
-                                                fontWeight = FontWeight.SemiBold
+                                                fontWeight = FontWeight.Bold
                                             )
                                         }
 
@@ -206,7 +208,8 @@ fun ModelDownloaderDialog(
                                         Text(
                                             text = model.recommendedFor,
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.secondary
+                                            color = if (!model.isGatedHuggingFace) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary,
+                                            fontWeight = FontWeight.Medium
                                         )
 
                                         Spacer(modifier = Modifier.height(8.dp))
@@ -219,12 +222,12 @@ fun ModelDownloaderDialog(
                                                 )
                                             },
                                             enabled = downloadState !is DownloadState.Downloading,
-                                            shape = RoundedCornerShape(8.dp),
+                                            shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.align(Alignment.End)
                                         ) {
                                             Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                                             Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Download")
+                                            Text(if (!model.isGatedHuggingFace) "Instant Download" else "Download")
                                         }
                                     }
                                 }
