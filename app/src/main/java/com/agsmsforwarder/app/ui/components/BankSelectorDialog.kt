@@ -259,13 +259,13 @@ fun BankSelectorDialog(
     )
 }
 
-private fun loadInstalledApps(context: Context): java.util.List<InstalledAppItem> {
+private fun loadInstalledApps(context: Context): List<InstalledAppItem> {
     val pm = context.packageManager
     val intent = Intent(Intent.ACTION_MAIN, null).apply {
         addCategory(Intent.CATEGORY_LAUNCHER)
     }
     val resolveInfos = pm.queryIntentActivities(intent, 0)
-    val appList = java.util.ArrayList<InstalledAppItem>()
+    val appList = mutableListOf<InstalledAppItem>()
 
     for (info in resolveInfos) {
         val appInfo = info.activityInfo.applicationInfo
