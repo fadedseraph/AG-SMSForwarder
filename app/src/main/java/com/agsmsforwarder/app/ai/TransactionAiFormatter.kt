@@ -66,7 +66,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                 releaseModelInternal()
 
                 // MediaPipe maxTokens specifies TOTAL sequence length (prompt tokens + output tokens).
-                // It must be at least 512 to prevent native C++ buffer asserts / SIGABRT crashes.
+                // Must be at least 512 to prevent native C++ buffer asserts / SIGABRT crashes.
                 val effectiveMaxTokens = maxOf(maxTokens, 512)
                 val effectiveTopK = if (topK in 1..100) topK else 40
                 val effectiveTemperature = if (temperature in 0f..2f) temperature else 0.2f
@@ -124,7 +124,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             val systemPrompt = systemPromptOverride?.ifBlank { null } ?: AppPreferences.DEFAULT_SYSTEM_PROMPT
             val prompt = buildFewShotPrompt(systemPrompt, combinedInput)
 
-            Log.d(TAG, "Submitting prompt to MediaPipe LlmInference: '$prompt'")
+            Log.d(TAG, "Submitting prompt to MediaPipe LlmInference:\n$prompt")
 
             val rawOutput = mutex.withLock {
                 inferenceInstance.generateResponse(prompt)
@@ -134,11 +134,11 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             _lastInferenceLatencyMs.value = latency
             Log.d(TAG, "AI Inference raw output (in ${latency}ms): '$rawOutput'")
 
-            val parsed = parseLlmResponse(rawOutput, latency)
+            val parsed = parseLlmResponse(rawOutput, notificationTitle, latency)
             if (parsed != null) {
                 return@withContext parsed
             } else {
-                Log.w(TAG, "AI output did not match expected structure. Falling back to Regex.")
+                Log.w(TAG, "AI output could not be formatted. Falling back to Regex.")
                 val fallback = RegexFallbackExtractor.extract(packageName, notificationTitle, notificationText)
                 return@withContext fallback.copy(latencyMs = latency)
             }
@@ -150,62 +150,129 @@ class TransactionAiFormatter private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Uses strict Gemma multi-turn few-shot formatting to eliminate conversational filler.
+     */
     private fun buildFewShotPrompt(systemPrompt: String, input: String): String {
-        return "<start_of_turn>user\n" +
-                "$systemPrompt\n\n" +
-                "Examples:\n" +
-                "Chase: You spent \$45.20 at TRADER JOE'S on 08/29. -> Chase: \$45.20 spent at Trader Joe's\n" +
-                "Bank of America: Alert: \$120.00 debit card purchase at SHELL. -> Bank of America: \$120.00 spent at Shell\n" +
-                "Wells Fargo: Your OTP code is 849201. -> SKIP\n\n" +
-                "Input:\n$input<end_of_turn>\n<start_of_turn>model\n"
+        return buildString {
+            append("<start_of_turn>user\n")
+            append("Instruction: $systemPrompt\n\n")
+            append("Alert: Chase Mobile: Debit ending in 4102 charged \$42.50 at Trader Joe's.<end_of_turn>\n")
+            append("<start_of_turn>model\n")
+            append("Chase: \$42.50 spent at Trader Joe's<end_of_turn>\n")
+            append("<start_of_turn>user\n")
+            append("Alert: Bank of America: Alert: \$120.00 debit card purchase at SHELL OIL 5744.<end_of_turn>\n")
+            append("<start_of_turn>model\n")
+            append("Bank of America: \$120.00 spent at Shell Oil<end_of_turn>\n")
+            append("<start_of_turn>user\n")
+            append("Alert: Wells Fargo: Your OTP code is 849201 for login.<end_of_turn>\n")
+            append("<start_of_turn>model\n")
+            append("SKIP<end_of_turn>\n")
+            append("<start_of_turn>user\n")
+            append("Alert: $input<end_of_turn>\n")
+            append("<start_of_turn>model\n")
+        }
     }
 
-    private fun parseLlmResponse(rawResponse: String, latencyMs: Long): FormattedTransaction? {
-        val clean = rawResponse.trim()
+    /**
+     * Parses the LLM output robustly, extracting transaction details even if the model
+     * adds conversational preamble or formatting tags.
+     */
+    private fun parseLlmResponse(rawResponse: String, defaultBankName: String, latencyMs: Long): FormattedTransaction? {
+        val cleanRaw = rawResponse.trim()
             .replace("<start_of_turn>model", "")
+            .replace("<start_of_turn>", "")
             .replace("<end_of_turn>", "")
-            .replace("Output:", "")
             .trim()
-            .lines()
-            .map { it.trim() }
-            .firstOrNull { it.isNotBlank() } ?: ""
 
-        if (clean.isBlank() || clean.equals("SKIP", ignoreCase = true)) {
-            return FormattedTransaction.SKIP.copy(latencyMs = latencyMs)
+        if (cleanRaw.isBlank()) {
+            return null
         }
 
-        // Expected format: "[Bank]: $[Amount] spent at [Merchant]"
-        val regex = Regex("""^([^:]+):\s*\$([0-9]+(?:\.[0-9]{2})?)\s+spent\s+at\s+(.+)$""", RegexOption.IGNORE_CASE)
-        val match = regex.find(clean)
-        return if (match != null) {
-            val (bank, amount, merchant) = match.destructured
-            FormattedTransaction(
-                bank = bank.trim(),
-                amount = amount.trim(),
-                merchant = merchant.trim(),
-                isTransaction = true,
-                formattedMessage = clean,
-                isAiGenerated = true,
-                latencyMs = latencyMs
-            )
-        } else if (clean.contains("$") && (clean.contains("spent at", ignoreCase = true) || clean.contains("at", ignoreCase = true))) {
-            // Generous parsing for slight deviations
-            val bank = clean.substringBefore(":").trim()
-            val amountMatch = Regex("""\$([0-9]+(?:\.[0-9]{2})?)""").find(clean)
-            val amount = amountMatch?.groupValues?.getOrNull(1) ?: ""
-            val merchant = clean.substringAfter("at ").substringAfter("AT ").trim()
-            FormattedTransaction(
-                bank = if (bank.length < 30) bank else "Bank Alert",
-                amount = amount,
-                merchant = merchant,
-                isTransaction = true,
-                formattedMessage = clean,
-                isAiGenerated = true,
-                latencyMs = latencyMs
-            )
-        } else {
-            null
+        val lines = cleanRaw.lines().map { it.trim() }.filter { it.isNotBlank() }
+
+        // Check for immediate SKIP
+        if (lines.any { it.equals("SKIP", ignoreCase = true) || it.startsWith("SKIP", ignoreCase = true) }) {
+            return FormattedTransaction.SKIP.copy(isAiGenerated = true, latencyMs = latencyMs)
         }
+
+        // Find candidate line that contains transaction details
+        for (line in lines) {
+            // Ignore conversational preambles
+            if (line.startsWith("Sure,", ignoreCase = true) ||
+                line.startsWith("Here is", ignoreCase = true) ||
+                line.startsWith("Here's", ignoreCase = true) ||
+                line.startsWith("Extracted:", ignoreCase = true) ||
+                line.startsWith("Output:", ignoreCase = true) && !line.contains("$")
+            ) {
+                continue
+            }
+
+            var candidate = line
+                .replace("Output:", "", ignoreCase = true)
+                .replace("`", "")
+                .trim()
+
+            // Resolve placeholder brackets like "[Bank]" or "[Chase Mobile]"
+            val resolvedBank = if (candidate.contains("[Bank]", ignoreCase = true)) {
+                val cleanBank = defaultBankName.removeSuffix("Mobile").removeSuffix("App").trim().ifBlank { "Bank Alert" }
+                candidate = candidate.replace("[Bank]", cleanBank, ignoreCase = true)
+                cleanBank
+            } else {
+                candidate.substringBefore(":").replace("[", "").replace("]", "").trim()
+            }
+
+            candidate = candidate.replace("[", "").replace("]", "")
+
+            // Regex 1: "Bank: $42.50 spent at Trader Joe's"
+            val standardMatch = Regex("""^([^:]+):\s*\$([0-9]+(?:\.[0-9]{2})?)\s+spent\s+at\s+(.+)$""", RegexOption.IGNORE_CASE).find(candidate)
+            if (standardMatch != null) {
+                val (b, amt, merch) = standardMatch.destructured
+                return FormattedTransaction(
+                    bank = b.trim(),
+                    amount = amt.trim(),
+                    merchant = cleanMerchant(merch.trim()),
+                    isTransaction = true,
+                    formattedMessage = "${b.trim()}: \$${amt.trim()} spent at ${cleanMerchant(merch.trim())}",
+                    isAiGenerated = true,
+                    latencyMs = latencyMs
+                )
+            }
+
+            // Regex 2: Flexible extraction if line contains currency amount ($XX.XX)
+            val amountMatch = Regex("""\$([0-9]+(?:\.[0-9]{2})?)""").find(candidate)
+            if (amountMatch != null) {
+                val amt = amountMatch.groupValues[1]
+                val merchantPart = when {
+                    candidate.contains("spent at ", ignoreCase = true) -> candidate.substringAfter("spent at ")
+                    candidate.contains("at ", ignoreCase = true) -> candidate.substringAfter("at ")
+                    candidate.contains("to ", ignoreCase = true) -> candidate.substringAfter("to ")
+                    else -> "Merchant"
+                }.substringBefore(" on card").substringBefore(".").trim()
+
+                val finalBank = if (resolvedBank.length in 2..30) resolvedBank else defaultBankName.ifBlank { "Bank Alert" }
+                val finalMerchant = cleanMerchant(merchantPart)
+
+                return FormattedTransaction(
+                    bank = finalBank,
+                    amount = amt,
+                    merchant = finalMerchant,
+                    isTransaction = true,
+                    formattedMessage = "$finalBank: \$$amt spent at $finalMerchant",
+                    isAiGenerated = true,
+                    latencyMs = latencyMs
+                )
+            }
+        }
+
+        return null
+    }
+
+    private fun cleanMerchant(raw: String): String {
+        return raw.trim()
+            .removePrefix("at ")
+            .removePrefix("AT ")
+            .trimEnd('.', ';', ',')
     }
 
     private fun releaseModelInternal() {
