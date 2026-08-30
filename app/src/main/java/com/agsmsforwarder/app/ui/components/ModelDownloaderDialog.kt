@@ -55,6 +55,7 @@ import com.agsmsforwarder.app.ui.theme.StatusErrorBg
 import com.agsmsforwarder.app.ui.theme.StatusErrorFg
 import com.agsmsforwarder.app.ui.theme.StatusSuccessBg
 import com.agsmsforwarder.app.ui.theme.StatusSuccessFg
+import com.agsmsforwarder.app.ui.theme.VaultSurfaceContainer
 import java.util.Locale
 
 @Composable
@@ -77,6 +78,8 @@ fun ModelDownloaderDialog(
                 onDismiss()
             }
         },
+        containerColor = VaultSurfaceContainer,
+        shape = RoundedCornerShape(24.dp),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(

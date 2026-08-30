@@ -45,6 +45,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.agsmsforwarder.app.data.model.AppPreset
+import com.agsmsforwarder.app.ui.theme.VaultOutlineVariant
+import com.agsmsforwarder.app.ui.theme.VaultPrimary
+import com.agsmsforwarder.app.ui.theme.VaultSurfaceContainer
+import com.agsmsforwarder.app.ui.theme.VaultSurfaceContainerHighest
 
 data class InstalledAppItem(
     val name: String,
@@ -70,11 +74,14 @@ fun BankSelectorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = VaultSurfaceContainer,
+        shape = RoundedCornerShape(24.dp),
         title = {
             Text(
                 text = "Target Banking Apps",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
         },
         text = {

@@ -1,6 +1,9 @@
 package com.agsmsforwarder.app.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,19 +14,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryAlert
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sms
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.agsmsforwarder.app.ai.ModelLoadState
 import com.agsmsforwarder.app.ui.theme.StatusErrorBg
 import com.agsmsforwarder.app.ui.theme.StatusErrorFg
@@ -46,9 +52,12 @@ import com.agsmsforwarder.app.ui.theme.StatusSuccessBg
 import com.agsmsforwarder.app.ui.theme.StatusSuccessFg
 import com.agsmsforwarder.app.ui.theme.StatusWarningBg
 import com.agsmsforwarder.app.ui.theme.StatusWarningFg
-
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.FolderOpen
+import com.agsmsforwarder.app.ui.theme.VaultOutlineVariant
+import com.agsmsforwarder.app.ui.theme.VaultPrimary
+import com.agsmsforwarder.app.ui.theme.VaultSurfaceContainer
+import com.agsmsforwarder.app.ui.theme.VaultSurfaceContainerHigh
+import com.agsmsforwarder.app.ui.theme.VaultSurfaceContainerHighest
+import com.agsmsforwarder.app.ui.theme.VaultTertiary
 
 @Composable
 fun HealthDashboardCard(
@@ -65,144 +74,158 @@ fun HealthDashboardCard(
     onOpenAiSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    ElevatedCard(
+    Column(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(
+        // Section Header with NPU Badge
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "SYSTEM HEALTH",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+
+            // NPU status badge
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(9999.dp))
+                    .background(VaultSurfaceContainerHigh)
+                    .border(1.dp, VaultOutlineVariant.copy(alpha = 0.5f), RoundedCornerShape(9999.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Memory,
+                    contentDescription = null,
+                    tint = VaultTertiary,
+                    modifier = Modifier.size(15.dp)
+                )
+                Text(
+                    text = if (modelLoadState is ModelLoadState.Loaded) "AI Edge Engine" else "Regex Engine",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium
+                )
+                if (lastLatencyMs > 0) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(VaultSurfaceContainer)
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = "~${lastLatencyMs}ms",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = VaultTertiary,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Horizontal scrolling status pills
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "System & AI Health",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                val allGood = hasSmsPermission && hasNotificationAccess && isIgnoringBatteryOptimizations
-                StatusPill(
-                    text = if (allGood) "System Ready" else "Attention Needed",
-                    isPositive = allGood
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Permission & Service Rows
-            HealthItemRow(
+            // SMS Permission Pill
+            StatusCardPill(
                 icon = Icons.Default.Sms,
-                title = "SMS Permission",
-                statusText = if (hasSmsPermission) "Granted" else "Missing",
+                title = "SMS Perms",
+                statusLabel = if (hasSmsPermission) "Granted" else "Action Needed",
                 isOk = hasSmsPermission,
-                actionLabel = if (!hasSmsPermission) "Grant" else null,
-                onAction = onGrantSmsPermission
+                onClick = onGrantSmsPermission
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            HealthItemRow(
+            // Notification Listener Pill
+            StatusCardPill(
                 icon = Icons.Default.NotificationsActive,
-                title = "Notification Listener",
-                statusText = if (hasNotificationAccess) "Active" else "Disabled in Settings",
+                title = "Listener",
+                statusLabel = if (hasNotificationAccess) "Active" else "Disabled",
                 isOk = hasNotificationAccess,
-                actionLabel = if (!hasNotificationAccess) "Enable" else null,
-                onAction = onOpenNotificationAccessSettings
+                onClick = onOpenNotificationAccessSettings
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            HealthItemRow(
+            // Battery Optimization Pill
+            StatusCardPill(
                 icon = Icons.Default.BatteryAlert,
-                title = "Battery Optimization",
-                statusText = if (isIgnoringBatteryOptimizations) "Unrestricted" else "Restricted",
+                title = "Battery Opt",
+                statusLabel = if (isIgnoringBatteryOptimizations) "Unrestricted" else "Action Needed",
                 isOk = isIgnoringBatteryOptimizations,
-                actionLabel = if (!isIgnoringBatteryOptimizations) "Allow" else null,
-                onAction = onRequestBatteryExemption
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // AI Model Status Card
-            AiEngineStatusCard(
-                modelLoadState = modelLoadState,
-                lastLatencyMs = lastLatencyMs,
-                onSelectModelFile = onSelectModelFile,
-                onOpenModelDownloader = onOpenModelDownloader,
-                onOpenAiSettings = onOpenAiSettings
+                onClick = onRequestBatteryExemption
             )
         }
+
+        // AI Engine Container Card
+        AiEngineStatusCard(
+            modelLoadState = modelLoadState,
+            lastLatencyMs = lastLatencyMs,
+            onSelectModelFile = onSelectModelFile,
+            onOpenModelDownloader = onOpenModelDownloader,
+            onOpenAiSettings = onOpenAiSettings
+        )
     }
 }
 
 @Composable
-private fun HealthItemRow(
+private fun StatusCardPill(
     icon: ImageVector,
     title: String,
-    statusText: String,
+    statusLabel: String,
     isOk: Boolean,
-    actionLabel: String?,
-    onAction: () -> Unit
+    onClick: () -> Unit
 ) {
+    val iconBg = if (isOk) StatusSuccessBg else StatusErrorBg
+    val iconFg = if (isOk) StatusSuccessFg else StatusErrorFg
+
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .clip(RoundedCornerShape(16.dp))
+            .background(VaultSurfaceContainer)
+            .border(1.dp, VaultOutlineVariant.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(iconBg),
+            contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (isOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(22.dp)
+                tint = iconFg,
+                modifier = Modifier.size(18.dp)
             )
-            Spacer(modifier = Modifier.width(10.dp))
-            Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = statusText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isOk) StatusSuccessFg else StatusErrorFg
-                )
-            }
         }
 
-        if (actionLabel != null) {
-            FilledTonalButton(
-                onClick = onAction,
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ),
-                contentPadding = ButtonDefaults.ButtonWithIconContentPadding
-            ) {
-                Text(text = actionLabel, style = MaterialTheme.typography.labelSmall)
-            }
-        } else {
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = "Active",
-                tint = StatusSuccessFg,
-                modifier = Modifier.size(18.dp)
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = statusLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = iconFg,
+                fontWeight = FontWeight.Medium
             )
         }
     }
@@ -217,16 +240,16 @@ private fun AiEngineStatusCard(
     onOpenAiSettings: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-        )
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, VaultOutlineVariant.copy(alpha = 0.4f), RoundedCornerShape(20.dp)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = VaultSurfaceContainer)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(16.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -234,84 +257,108 @@ private fun AiEngineStatusCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Memory,
-                        contentDescription = "AI Engine",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Google AI Edge (MediaPipe)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(StatusInfoBg),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Memory,
+                            contentDescription = "AI Engine",
+                            tint = VaultPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Google AI Edge (MediaPipe)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "On-Device SLM (Gemma / LiteRT)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 OutlinedButton(
                     onClick = onOpenAiSettings,
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(VaultOutlineVariant))
                 ) {
+                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text("Config", style = MaterialTheme.typography.labelSmall)
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             when (modelLoadState) {
                 is ModelLoadState.Loaded -> {
                     val fileName = modelLoadState.modelPath.substringAfterLast("/")
-                    Text(
-                        text = "Model: $fileName (Loaded in ${modelLoadState.loadDurationMs}ms)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = StatusSuccessFg,
-                        fontWeight = FontWeight.Medium
-                    )
-                    if (lastLatencyMs > 0) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(VaultTertiary)
+                        )
                         Text(
-                            text = "Last Inference Latency: ${lastLatencyMs}ms",
+                            text = "Model: $fileName (${modelLoadState.loadDurationMs}ms load)",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = VaultTertiary,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
                 is ModelLoadState.Loading -> {
                     Text(
-                        text = "Loading on-device model weights into memory...",
+                        text = "Loading model weights into NPU/CPU memory...",
                         style = MaterialTheme.typography.bodySmall,
                         color = StatusInfoFg
                     )
                 }
                 is ModelLoadState.Error -> {
                     Text(
-                        text = "Error: ${modelLoadState.message}",
+                        text = "Model Error: ${modelLoadState.message}",
                         style = MaterialTheme.typography.bodySmall,
                         color = StatusErrorFg
                     )
                     Text(
-                        text = "Fallback active: High-precision Regex parsing will be used.",
+                        text = "Fallback active: Fast Regex extractor will process alerts.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 is ModelLoadState.Uninitialized -> {
                     Text(
-                        text = "No .task / .bin model file loaded. Operating in Regex Fallback Mode.",
+                        text = "No on-device model loaded. Operating in Regex Fallback Mode.",
                         style = MaterialTheme.typography.bodySmall,
                         color = StatusWarningFg
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)
             ) {
                 OutlinedButton(
                     onClick = onSelectModelFile,
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(VaultOutlineVariant))
                 ) {
                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
@@ -320,7 +367,11 @@ private fun AiEngineStatusCard(
 
                 FilledTonalButton(
                     onClick = onOpenModelDownloader,
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = VaultSurfaceContainerHighest,
+                        contentColor = VaultPrimary
+                    )
                 ) {
                     Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
@@ -328,24 +379,5 @@ private fun AiEngineStatusCard(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun StatusPill(text: String, isPositive: Boolean) {
-    val bg = if (isPositive) StatusSuccessBg else StatusWarningBg
-    val fg = if (isPositive) StatusSuccessFg else StatusWarningFg
-    Box(
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(bg)
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = fg,
-            fontWeight = FontWeight.Bold
-        )
     }
 }

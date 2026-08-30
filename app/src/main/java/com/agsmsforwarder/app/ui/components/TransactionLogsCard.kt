@@ -2,6 +2,7 @@ package com.agsmsforwarder.app.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,8 +17,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
@@ -25,7 +28,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,19 +42,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.agsmsforwarder.app.data.db.TransactionLogEntity
 import com.agsmsforwarder.app.data.model.SmsDeliveryStatus
-import com.agsmsforwarder.app.ui.theme.StatusErrorBg
 import com.agsmsforwarder.app.ui.theme.StatusErrorFg
-import com.agsmsforwarder.app.ui.theme.StatusInfoBg
-import com.agsmsforwarder.app.ui.theme.StatusInfoFg
-import com.agsmsforwarder.app.ui.theme.StatusSuccessBg
 import com.agsmsforwarder.app.ui.theme.StatusSuccessFg
-import com.agsmsforwarder.app.ui.theme.StatusWarningBg
 import com.agsmsforwarder.app.ui.theme.StatusWarningFg
+import com.agsmsforwarder.app.ui.theme.VaultOutlineVariant
+import com.agsmsforwarder.app.ui.theme.VaultPrimary
+import com.agsmsforwarder.app.ui.theme.VaultSurfaceContainer
+import com.agsmsforwarder.app.ui.theme.VaultSurfaceContainerHigh
+import com.agsmsforwarder.app.ui.theme.VaultTertiary
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -65,55 +67,50 @@ fun TransactionLogsCard(
 ) {
     var showClearDialog by remember { mutableStateOf(false) }
 
-    ElevatedCard(
+    Column(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.History,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Recent Alerts (${logs.size})",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+            Text(
+                text = "RECENT ACTIVITY",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
 
-                if (logs.isNotEmpty()) {
-                    IconButton(onClick = { showClearDialog = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Clear Logs",
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                    }
+            if (logs.isNotEmpty()) {
+                IconButton(
+                    onClick = { showClearDialog = true },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Clear Logs",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            if (logs.isEmpty()) {
+        if (logs.isEmpty()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, VaultOutlineVariant.copy(alpha = 0.3f), RoundedCornerShape(20.dp)),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = VaultSurfaceContainer)
+            ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 24.dp),
+                        .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -123,11 +120,11 @@ fun TransactionLogsCard(
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    logs.take(20).forEach { log ->
-                        LogItemView(log = log)
-                    }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                logs.take(20).forEach { log ->
+                    VaultActivityLogItem(log = log)
                 }
             }
         }
@@ -136,8 +133,8 @@ fun TransactionLogsCard(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear Transaction History") },
-            text = { Text("Are you sure you want to clear all processed transaction logs from the local database?") },
+            title = { Text("Clear Activity History") },
+            text = { Text("Are you sure you want to clear all processed transaction records from local storage?") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -159,150 +156,116 @@ fun TransactionLogsCard(
 }
 
 @Composable
-private fun LogItemView(log: TransactionLogEntity) {
+private fun VaultActivityLogItem(log: TransactionLogEntity) {
     var expanded by remember { mutableStateOf(false) }
-    val timeFormat = remember { SimpleDateFormat("MMM d, HH:mm:ss", Locale.getDefault()) }
+    val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
     val formattedTime = remember(log.timestamp) { timeFormat.format(Date(log.timestamp)) }
+
+    val dotColor = when (log.smsDeliveryStatus) {
+        SmsDeliveryStatus.SENT, SmsDeliveryStatus.DELIVERED, SmsDeliveryStatus.SIMULATED_TEST -> VaultTertiary
+        SmsDeliveryStatus.PENDING -> VaultPrimary
+        SmsDeliveryStatus.SKIPPED_NOT_TRANSACTION, SmsDeliveryStatus.SKIPPED_NO_RECIPIENT -> StatusWarningFg
+        else -> StatusErrorFg
+    }
+
+    val statusIcon = when (log.smsDeliveryStatus) {
+        SmsDeliveryStatus.SENT, SmsDeliveryStatus.DELIVERED, SmsDeliveryStatus.SIMULATED_TEST -> Icons.Default.CheckCircle
+        SmsDeliveryStatus.PENDING -> Icons.Default.HourglassEmpty
+        else -> Icons.Default.Error
+    }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .border(1.dp, VaultOutlineVariant.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
             .clickable { expanded = !expanded },
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        )
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = VaultSurfaceContainer)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(14.dp)
         ) {
-            // Header Row: App name, Time, SMS status
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Pulsing dot indicator
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(dotColor)
+                )
+
+                // Main Info: Parsed Result + Time
                 Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = log.parsedResult.ifBlank { log.appName },
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Text(
+                            text = formattedTime,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = log.appName.ifBlank { log.packageName.substringAfterLast(".") },
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = formattedTime,
+                        text = "${log.appName} • ${if (log.isAiParsed) "AI" else "Regex"} (~${log.latencyMs}ms)",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    DeliveryStatusBadge(status = log.smsDeliveryStatus)
-                    Icon(
-                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Expand",
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                // Status Icon
+                Icon(
+                    imageVector = statusIcon,
+                    contentDescription = log.smsDeliveryStatus.label,
+                    tint = dotColor,
+                    modifier = Modifier.size(18.dp)
+                )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Parsed Message Body
-            Text(
-                text = log.parsedResult,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (log.parsedResult == "SKIP") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-            )
-
-            // Badges row: AI vs Regex, Latency
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (log.isAiParsed) {
-                    MiniBadge(text = "AI Formatted", bg = StatusSuccessBg, fg = StatusSuccessFg)
-                } else {
-                    MiniBadge(text = "Regex", bg = StatusWarningBg, fg = StatusWarningFg)
-                }
-                if (log.latencyMs > 0) {
-                    MiniBadge(text = "${log.latencyMs}ms", bg = StatusInfoBg, fg = StatusInfoFg)
-                }
-            }
-
-            // Expanded details: Raw text & Recipient
+            // Expanded Raw Notification Details
             AnimatedVisibility(visible = expanded) {
-                Column(modifier = Modifier.padding(top = 10.dp)) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                Column(modifier = Modifier.padding(top = 10.dp, start = 20.dp)) {
+                    HorizontalDivider(color = VaultOutlineVariant.copy(alpha = 0.2f))
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Raw Notification:",
+                        text = "Raw Alert:",
                         style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         text = "${log.rawNotificationTitle}: ${log.rawNotificationText}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurface
                     )
 
                     if (log.smsRecipient.isNotBlank()) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Forwarded To: ${log.smsRecipient}",
+                            text = "Forwarded To: ${log.smsRecipient} (${log.smsDeliveryStatus.label})",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = VaultTertiary
                         )
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun DeliveryStatusBadge(status: SmsDeliveryStatus) {
-    val (bg, fg) = when (status) {
-        SmsDeliveryStatus.DELIVERED, SmsDeliveryStatus.SENT, SmsDeliveryStatus.SIMULATED_TEST -> StatusSuccessBg to StatusSuccessFg
-        SmsDeliveryStatus.PENDING -> StatusInfoBg to StatusInfoFg
-        SmsDeliveryStatus.SKIPPED_NOT_TRANSACTION, SmsDeliveryStatus.SKIPPED_NO_RECIPIENT -> StatusWarningBg to StatusWarningFg
-        SmsDeliveryStatus.FAILED_GENERIC, SmsDeliveryStatus.FAILED_NO_SERVICE,
-        SmsDeliveryStatus.FAILED_NULL_PDU, SmsDeliveryStatus.FAILED_RADIO_OFF -> StatusErrorBg to StatusErrorFg
-    }
-
-    Box(
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(bg)
-            .padding(horizontal = 8.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text = status.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = fg,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-private fun MiniBadge(text: String, bg: Color, fg: Color) {
-    Box(
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(bg)
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = fg,
-            fontWeight = FontWeight.Medium
-        )
     }
 }

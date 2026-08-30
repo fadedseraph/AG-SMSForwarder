@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.agsmsforwarder.app.data.preferences.AppPreferences
+import com.agsmsforwarder.app.ui.theme.VaultSurfaceContainer
 import kotlin.math.roundToInt
 
 @Composable
@@ -49,11 +50,14 @@ fun AdvancedAiDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = VaultSurfaceContainer,
+        shape = RoundedCornerShape(24.dp),
         title = {
             Text(
                 text = "Advanced AI Configuration",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
         },
         text = {
