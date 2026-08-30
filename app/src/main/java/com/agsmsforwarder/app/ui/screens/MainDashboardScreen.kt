@@ -73,6 +73,10 @@ import com.agsmsforwarder.app.ui.theme.VaultSurfaceContainerHigh
 import com.agsmsforwarder.app.ui.theme.VaultSurfaceContainerHighest
 import com.agsmsforwarder.app.ui.theme.VaultTertiary
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.agsmsforwarder.app.R
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainDashboardScreen(
@@ -112,22 +116,14 @@ fun MainDashboardScreen(
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_vaultpulse_logo),
+                            contentDescription = "VaultPulse Logo",
                             modifier = Modifier
                                 .size(36.dp)
-                                .clip(CircleShape)
-                                .background(VaultSurfaceContainerHigh)
-                                .border(1.dp, VaultOutlineVariant.copy(alpha = 0.4f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Shield,
-                                contentDescription = null,
-                                tint = VaultPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
+                                .clip(RoundedCornerShape(10.dp))
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
                                 text = "VaultPulse",
