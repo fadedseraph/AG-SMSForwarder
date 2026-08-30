@@ -75,13 +75,22 @@ object RegexFallbackExtractor {
             return FormattedTransaction.SKIP
         }
 
-        // Check if balance update alert (e.g. Chime morning money update)
-        val isBalanceUpdate = lower.contains("balance is") ||
+        val hasPurchaseIntent = lower.contains("spent") ||
+                lower.contains("purchase") ||
+                lower.contains("charged") ||
+                lower.contains("debit") ||
+                lower.contains("paid") ||
+                lower.contains("authorized")
+
+        // 4. Pure balance update alert (e.g. Chime morning money update)
+        val isPureBalanceUpdate = !hasPurchaseIntent && (
+                lower.contains("balance is") ||
                 lower.contains("money update") ||
                 lower.contains("checking balance") ||
                 lower.contains("account balance")
+        )
 
-        if (isBalanceUpdate) {
+        if (isPureBalanceUpdate) {
             val formattedMsg = "$bank: Balance is $$amount"
             return FormattedTransaction(
                 bank = bank,
@@ -94,7 +103,7 @@ object RegexFallbackExtractor {
             )
         }
 
-        // 4. Extract Merchant Name
+        // 5. Spending transaction: Extract Merchant & optional balance suffix
         var merchant: String? = null
         for (pattern in MERCHANT_PATTERNS) {
             val matcher = pattern.matcher(combinedText)
@@ -107,8 +116,13 @@ object RegexFallbackExtractor {
             }
         }
 
+        val balanceRegex = Regex("""(?:balance(?:\s+is)?|bal:?|checking balance(?:\s+is)?|new balance(?:\s+is)?)\s*:?\s*\$?([0-9]{1,5}(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
+        val balanceMatch = balanceRegex.find(combinedText)
+        val detectedBalance = balanceMatch?.groupValues?.getOrNull(1)
+        val balanceSuffix = if (detectedBalance != null && detectedBalance != amount) ". Balance: \$$detectedBalance" else ""
+
         val cleanMerchant = merchant ?: "Merchant"
-        val formattedMsg = "$bank: $$amount spent at $cleanMerchant"
+        val formattedMsg = "$bank: \$$amount spent at $cleanMerchant$balanceSuffix"
 
         return FormattedTransaction(
             bank = bank,

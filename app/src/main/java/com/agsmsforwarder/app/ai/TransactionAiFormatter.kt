@@ -149,19 +149,24 @@ class TransactionAiFormatter private constructor(private val context: Context) {
     }
 
     /**
-     * Strict Gemma turn prompt with support for purchases, balance updates (e.g. Chime), and OTP skips.
+     * Strict Gemma turn prompt with support for purchases, spending with balance, balance updates, and OTP skips.
      */
     private fun buildFewShotPrompt(systemPrompt: String, input: String): String {
         return buildString {
             append("<start_of_turn>user\n")
             append("You are a financial notification alert parser.\n")
-            append("Rule 1: If the alert is a purchase/charge/debit, output ONLY in this format: '<Bank>: $<Amount> spent at <Merchant>'\n")
+            append("Rule 1: If the alert is a purchase/charge, output ONLY in this format: '<Bank>: $<Amount> spent at <Merchant>'\n")
             append("Rule 2: If card digits are mentioned, append 'on card <Digits>'.\n")
-            append("Rule 3: If the alert is an account balance update (e.g. money update, balance is), output: '<Bank>: Balance is $<Amount>'\n")
-            append("Rule 4: If the alert is a verification code, OTP, security alert, login notification, or has NO money amount, you MUST output ONLY the single word: SKIP\n\n")
+            append("Rule 3: If an updated account balance is included in the purchase alert, append '. Balance: $<Balance>'.\n")
+            append("Rule 4: If the alert is purely an account balance update (no purchase), output: '<Bank>: Balance is $<Amount>'\n")
+            append("Rule 5: If the alert is a verification code, OTP, security alert, login notification, or has NO money amount, you MUST output ONLY the single word: SKIP\n\n")
             append("Alert: Chase Mobile: Debit ending in 4102 charged \$42.50 at Trader Joe's.<end_of_turn>\n")
             append("<start_of_turn>model\n")
             append("Chase: \$42.50 spent at Trader Joe's on card 4102<end_of_turn>\n")
+            append("<start_of_turn>user\n")
+            append("Alert: Chime: You spent \$15.50 at Target. Your new checking balance is \$230.30.<end_of_turn>\n")
+            append("<start_of_turn>model\n")
+            append("Chime: \$15.50 spent at Target. Balance: \$230.30<end_of_turn>\n")
             append("<start_of_turn>user\n")
             append("Alert: Chime: Here's your morning money update: your checking balance is \$245.80.<end_of_turn>\n")
             append("<start_of_turn>model\n")
@@ -227,6 +232,17 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             return FormattedTransaction.SKIP.copy(isAiGenerated = true, latencyMs = latencyMs)
         }
 
+        // Detect balance in input or candidate
+        val balanceRegex = Regex("""(?:balance(?:\s+is)?|bal:?|checking balance(?:\s+is)?|new balance(?:\s+is)?)\s*:?\s*\$?([0-9]{1,5}(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
+        val balanceMatchInInput = balanceRegex.find(rawInput)
+
+        val hasPurchaseIntent = rawInput.contains("spent", ignoreCase = true) ||
+                rawInput.contains("purchase", ignoreCase = true) ||
+                rawInput.contains("charged", ignoreCase = true) ||
+                rawInput.contains("debit", ignoreCase = true) ||
+                rawInput.contains("paid", ignoreCase = true) ||
+                rawInput.contains("authorized", ignoreCase = true)
+
         // 3. Scan candidate lines for extracted transaction details
         for (line in lines) {
             if (line.startsWith("Sure,", ignoreCase = true) ||
@@ -273,18 +289,20 @@ class TransactionAiFormatter private constructor(private val context: Context) {
 
                 val afterColon = candidate.substringAfter(":", "").trim().ifBlank { candidate }
 
-                // Check if this is a balance update (e.g. Chime morning money update)
-                val isBalanceUpdate = candidate.contains("balance is", ignoreCase = true) ||
+                // Check if this is purely a balance update
+                val isPureBalanceUpdate = !hasPurchaseIntent && (
+                        candidate.contains("balance is", ignoreCase = true) ||
                         candidate.contains("balance update", ignoreCase = true) ||
-                        candidate.contains("balance:", ignoreCase = true) ||
                         rawInput.contains("money update", ignoreCase = true) ||
                         rawInput.contains("balance is", ignoreCase = true)
+                )
 
-                if (isBalanceUpdate) {
-                    val formatted = "$finalBank: Balance is \$$amt"
+                if (isPureBalanceUpdate) {
+                    val finalAmt = balanceMatchInInput?.groupValues?.getOrNull(1) ?: amt
+                    val formatted = "$finalBank: Balance is \$$finalAmt"
                     return FormattedTransaction(
                         bank = finalBank,
-                        amount = amt,
+                        amount = finalAmt,
                         merchant = "Account Balance",
                         isTransaction = true,
                         formattedMessage = formatted,
@@ -293,15 +311,20 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                     )
                 }
 
+                // Otherwise, spending transaction
+                val balanceCandidateMatch = balanceRegex.find(candidate)
+                val detectedBalance = balanceCandidateMatch?.groupValues?.getOrNull(1)
+                    ?: balanceMatchInInput?.groupValues?.getOrNull(1)
+
                 val merchantCandidate = when {
                     afterColon.contains("spent at ", ignoreCase = true) -> afterColon.substringAfter("spent at ")
                     afterColon.contains("at ", ignoreCase = true) -> afterColon.substringAfter("at ")
                     afterColon.contains("to ", ignoreCase = true) -> afterColon.substringAfter("to ")
                     else -> "Merchant"
-                }.substringBefore(" on card").trimEnd('.', ';', ',')
+                }.substringBefore(" on card").substringBefore(". Balance").substringBefore(" Balance:").trimEnd('.', ';', ',')
 
                 val cardSuffix = if (afterColon.contains("on card", ignoreCase = true)) {
-                    " on card " + afterColon.substringAfter("on card").trim().take(10)
+                    " on card " + afterColon.substringAfter("on card").substringBefore(". Balance").substringBefore(" Balance:").trim().take(10)
                 } else if (rawInput.contains("ending in ", ignoreCase = true)) {
                     val digits = Regex("""ending in (\d{2,6})""", RegexOption.IGNORE_CASE).find(rawInput)?.groupValues?.getOrNull(1)
                     if (digits != null) " on card $digits" else ""
@@ -309,8 +332,14 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                     ""
                 }
 
+                val balanceSuffix = if (detectedBalance != null && detectedBalance != amt && rawInput.contains(detectedBalance)) {
+                    ". Balance: \$$detectedBalance"
+                } else {
+                    ""
+                }
+
                 val finalMerchant = cleanMerchant(merchantCandidate)
-                val formatted = "$finalBank: \$$amt spent at $finalMerchant$cardSuffix".trim()
+                val formatted = "$finalBank: \$$amt spent at $finalMerchant$cardSuffix$balanceSuffix".trim()
 
                 return FormattedTransaction(
                     bank = finalBank,

@@ -130,6 +130,10 @@ fun LiveTestPlayground(
                     testTitle = "Chime"
                     testText = "Here's your morning money update: your checking balance is $245.80."
                 }
+                PresetChip(label = "Chime Spend+Bal") {
+                    testTitle = "Chime"
+                    testText = "You spent $15.50 at Target. Your new checking balance is $230.30."
+                }
                 PresetChip(label = "Amex $89.99") {
                     testTitle = "American Express"
                     testText = "Purchase authorized: $89.99 at AMAZON.COM on card 4091."
