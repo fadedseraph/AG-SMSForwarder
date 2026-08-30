@@ -26,20 +26,23 @@ class SmsDeliveryReceiver : BroadcastReceiver() {
             try {
                 when (action) {
                     ACTION_SMS_SENT -> {
+                        // In Android Telephony, Activity.RESULT_OK (-1) or 0 indicates success.
+                        // Specific errors are positive integers (SmsManager.RESULT_ERROR_... > 0).
                         val status = when (resultCode) {
-                            Activity.RESULT_OK -> SmsDeliveryStatus.SENT
+                            Activity.RESULT_OK, 0 -> SmsDeliveryStatus.SENT
                             SmsManager.RESULT_ERROR_NO_SERVICE -> SmsDeliveryStatus.FAILED_NO_SERVICE
                             SmsManager.RESULT_ERROR_RADIO_OFF -> SmsDeliveryStatus.FAILED_RADIO_OFF
                             SmsManager.RESULT_ERROR_NULL_PDU -> SmsDeliveryStatus.FAILED_NULL_PDU
-                            else -> SmsDeliveryStatus.FAILED_GENERIC
+                            else -> if (resultCode > 0) SmsDeliveryStatus.FAILED_GENERIC else SmsDeliveryStatus.SENT
                         }
                         Log.d(TAG, "SMS Sent Callback for Log #$logId: $status (Result Code: $resultCode)")
                         db.transactionLogDao().updateDeliveryStatus(logId, status)
                     }
                     ACTION_SMS_DELIVERED -> {
-                        val status = when (resultCode) {
-                            Activity.RESULT_OK -> SmsDeliveryStatus.DELIVERED
-                            else -> SmsDeliveryStatus.FAILED_GENERIC
+                        val status = when {
+                            resultCode == Activity.RESULT_OK || resultCode == 0 -> SmsDeliveryStatus.DELIVERED
+                            resultCode > 0 -> SmsDeliveryStatus.FAILED_GENERIC
+                            else -> SmsDeliveryStatus.DELIVERED
                         }
                         Log.d(TAG, "SMS Delivered Callback for Log #$logId: $status (Result Code: $resultCode)")
                         db.transactionLogDao().updateDeliveryStatus(logId, status)
