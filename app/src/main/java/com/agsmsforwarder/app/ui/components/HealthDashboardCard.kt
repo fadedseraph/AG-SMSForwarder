@@ -1,5 +1,6 @@
 package com.agsmsforwarder.app.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,12 +26,13 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sms
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -38,7 +40,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,7 +51,6 @@ import com.agsmsforwarder.app.ui.theme.StatusInfoBg
 import com.agsmsforwarder.app.ui.theme.StatusInfoFg
 import com.agsmsforwarder.app.ui.theme.StatusSuccessBg
 import com.agsmsforwarder.app.ui.theme.StatusSuccessFg
-import com.agsmsforwarder.app.ui.theme.StatusWarningBg
 import com.agsmsforwarder.app.ui.theme.StatusWarningFg
 import com.agsmsforwarder.app.ui.theme.VaultOutlineVariant
 import com.agsmsforwarder.app.ui.theme.VaultPrimary
@@ -256,10 +256,13 @@ private fun AiEngineStatusCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Box(
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(36.dp)
                             .clip(CircleShape)
                             .background(StatusInfoBg),
                         contentAlignment = Alignment.Center
@@ -268,11 +271,11 @@ private fun AiEngineStatusCard(
                             imageVector = Icons.Default.Memory,
                             contentDescription = "AI Engine",
                             tint = VaultPrimary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f, fill = false)) {
                         Text(
                             text = "Google AI Edge (MediaPipe)",
                             style = MaterialTheme.typography.titleMedium,
@@ -287,14 +290,23 @@ private fun AiEngineStatusCard(
                     }
                 }
 
-                OutlinedButton(
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Clean Config Icon Button
+                IconButton(
                     onClick = onOpenAiSettings,
-                    shape = RoundedCornerShape(10.dp),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(VaultOutlineVariant))
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(VaultSurfaceContainerHigh)
+                        .border(1.dp, VaultOutlineVariant.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
                 ) {
-                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Config", style = MaterialTheme.typography.labelSmall)
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = "AI Configuration",
+                        tint = VaultPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
 
@@ -358,7 +370,7 @@ private fun AiEngineStatusCard(
                 OutlinedButton(
                     onClick = onSelectModelFile,
                     shape = RoundedCornerShape(10.dp),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(VaultOutlineVariant))
+                    border = BorderStroke(1.dp, VaultOutlineVariant.copy(alpha = 0.5f))
                 ) {
                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
