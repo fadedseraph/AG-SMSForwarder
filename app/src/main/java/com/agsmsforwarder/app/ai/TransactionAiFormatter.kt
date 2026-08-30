@@ -41,7 +41,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
         modelPath: String,
         temperature: Float = 0.2f,
         topK: Int = 40,
-        maxTokens: Int = 128
+        maxTokens: Int = 512
     ): Result<Unit> = withContext(Dispatchers.Default) {
         mutex.withLock {
             if (modelPath.isBlank()) {
@@ -64,11 +64,20 @@ class TransactionAiFormatter private constructor(private val context: Context) {
 
             try {
                 releaseModelInternal()
+
+                // MediaPipe maxTokens specifies TOTAL sequence length (prompt tokens + output tokens).
+                // It must be at least 512 to prevent native C++ buffer asserts / SIGABRT crashes.
+                val effectiveMaxTokens = maxOf(maxTokens, 512)
+                val effectiveTopK = if (topK in 1..100) topK else 40
+                val effectiveTemperature = if (temperature in 0f..2f) temperature else 0.2f
+
+                Log.i(TAG, "Configuring LlmInference with model=$modelPath, maxTokens=$effectiveMaxTokens, topK=$effectiveTopK, temp=$effectiveTemperature")
+
                 val options = LlmInference.LlmInferenceOptions.builder()
                     .setModelPath(file.absolutePath)
-                    .setMaxTokens(maxTokens)
-                    .setTopK(topK)
-                    .setTemperature(temperature)
+                    .setMaxTokens(effectiveMaxTokens)
+                    .setTopK(effectiveTopK)
+                    .setTemperature(effectiveTemperature)
                     .build()
 
                 val inference = LlmInference.createFromOptions(context, options)
@@ -79,7 +88,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                 Log.i(TAG, "MediaPipe LLM loaded successfully from $modelPath in ${loadDuration}ms")
                 Result.success(Unit)
             } catch (e: Throwable) {
-                val errMsg = "Failed to initialize MediaPipe LLM: ${e.localizedMessage}"
+                val errMsg = "Failed to initialize MediaPipe LLM: ${e.localizedMessage ?: e.javaClass.simpleName}"
                 Log.e(TAG, errMsg, e)
                 releaseModelInternal()
                 _modelState.value = ModelLoadState.Error(errMsg)
@@ -115,6 +124,8 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             val systemPrompt = systemPromptOverride?.ifBlank { null } ?: AppPreferences.DEFAULT_SYSTEM_PROMPT
             val prompt = buildFewShotPrompt(systemPrompt, combinedInput)
 
+            Log.d(TAG, "Submitting prompt to MediaPipe LlmInference: '$prompt'")
+
             val rawOutput = mutex.withLock {
                 inferenceInstance.generateResponse(prompt)
             }
@@ -140,23 +151,24 @@ class TransactionAiFormatter private constructor(private val context: Context) {
     }
 
     private fun buildFewShotPrompt(systemPrompt: String, input: String): String {
-        return buildString {
-            append(systemPrompt)
-            append("\n\n")
-            append("Input: Chase: You spent \$45.20 at TRADER JOE'S #123 on 08/29.\n")
-            append("Output: Chase: \$45.20 spent at Trader Joe's\n\n")
-            append("Input: Bank of America: Alert: \$120.00 debit card purchase at SHELL OIL 5744.\n")
-            append("Output: Bank of America: \$120.00 spent at Shell Oil\n\n")
-            append("Input: Wells Fargo: Your one-time verification code is 849201.\n")
-            append("Output: SKIP\n\n")
-            append("Input: ").append(input).append("\n")
-            append("Output:")
-        }
+        return "<start_of_turn>user\n" +
+                "$systemPrompt\n\n" +
+                "Examples:\n" +
+                "Chase: You spent \$45.20 at TRADER JOE'S on 08/29. -> Chase: \$45.20 spent at Trader Joe's\n" +
+                "Bank of America: Alert: \$120.00 debit card purchase at SHELL. -> Bank of America: \$120.00 spent at Shell\n" +
+                "Wells Fargo: Your OTP code is 849201. -> SKIP\n\n" +
+                "Input:\n$input<end_of_turn>\n<start_of_turn>model\n"
     }
 
     private fun parseLlmResponse(rawResponse: String, latencyMs: Long): FormattedTransaction? {
         val clean = rawResponse.trim()
-            .lines().firstOrNull()?.trim() ?: ""
+            .replace("<start_of_turn>model", "")
+            .replace("<end_of_turn>", "")
+            .replace("Output:", "")
+            .trim()
+            .lines()
+            .map { it.trim() }
+            .firstOrNull { it.isNotBlank() } ?: ""
 
         if (clean.isBlank() || clean.equals("SKIP", ignoreCase = true)) {
             return FormattedTransaction.SKIP.copy(latencyMs = latencyMs)
@@ -178,10 +190,14 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             )
         } else if (clean.contains("$") && (clean.contains("spent at", ignoreCase = true) || clean.contains("at", ignoreCase = true))) {
             // Generous parsing for slight deviations
+            val bank = clean.substringBefore(":").trim()
+            val amountMatch = Regex("""\$([0-9]+(?:\.[0-9]{2})?)""").find(clean)
+            val amount = amountMatch?.groupValues?.getOrNull(1) ?: ""
+            val merchant = clean.substringAfter("at ").substringAfter("AT ").trim()
             FormattedTransaction(
-                bank = clean.substringBefore(":").trim(),
-                amount = "",
-                merchant = "",
+                bank = if (bank.length < 30) bank else "Bank Alert",
+                amount = amount,
+                merchant = merchant,
                 isTransaction = true,
                 formattedMessage = clean,
                 isAiGenerated = true,
@@ -196,14 +212,14 @@ class TransactionAiFormatter private constructor(private val context: Context) {
         try {
             llmInference?.close()
         } catch (e: Exception) {
-            Log.w(TAG, "Error closing LlmInference instance", e)
+            Log.w(TAG, "Error closing previous LlmInference instance: ${e.message}")
         } finally {
             llmInference = null
             currentLoadedPath = null
         }
     }
 
-    suspend fun close() = withContext(Dispatchers.Default) {
+    suspend fun release() {
         mutex.withLock {
             releaseModelInternal()
             _modelState.value = ModelLoadState.Uninitialized
@@ -214,13 +230,11 @@ class TransactionAiFormatter private constructor(private val context: Context) {
         private const val TAG = "TransactionAiFormatter"
 
         @Volatile
-        private var INSTANCE: TransactionAiFormatter? = null
+        private var instance: TransactionAiFormatter? = null
 
         fun getInstance(context: Context): TransactionAiFormatter {
-            return INSTANCE ?: synchronized(this) {
-                val instance = TransactionAiFormatter(context.applicationContext)
-                INSTANCE = instance
-                instance
+            return instance ?: synchronized(this) {
+                instance ?: TransactionAiFormatter(context.applicationContext).also { instance = it }
             }
         }
     }

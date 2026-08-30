@@ -13,7 +13,7 @@ data class AppPreferences(
     val modelFilePath: String = "",
     val aiTemperature: Float = 0.2f,
     val aiTopK: Int = 40,
-    val aiMaxTokens: Int = 128,
+    val aiMaxTokens: Int = 512,
     val customSystemPrompt: String = DEFAULT_SYSTEM_PROMPT
 ) {
     companion object {

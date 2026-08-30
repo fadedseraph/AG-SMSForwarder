@@ -112,8 +112,8 @@ fun AdvancedAiDialog(
                 Slider(
                     value = maxTokens.toFloat(),
                     onValueChange = { maxTokens = it.roundToInt() },
-                    valueRange = 32f..512f,
-                    steps = 15
+                    valueRange = 256f..2048f,
+                    steps = 13
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
