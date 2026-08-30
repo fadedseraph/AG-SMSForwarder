@@ -3,6 +3,7 @@ package com.agsmsforwarder.app.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,12 +18,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.ModelTraining
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.AssistChip
@@ -50,11 +50,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agsmsforwarder.app.data.model.FormattedTransaction
-import com.agsmsforwarder.app.ui.theme.StatusInfoBg
-import com.agsmsforwarder.app.ui.theme.StatusInfoFg
-import com.agsmsforwarder.app.ui.theme.StatusSuccessBg
-import com.agsmsforwarder.app.ui.theme.StatusSuccessFg
-import com.agsmsforwarder.app.ui.theme.StatusWarningBg
 import com.agsmsforwarder.app.ui.theme.StatusWarningFg
 import com.agsmsforwarder.app.ui.theme.VaultOnPrimary
 import com.agsmsforwarder.app.ui.theme.VaultOutlineVariant
@@ -133,7 +128,7 @@ fun LiveTestPlayground(
                 }
                 PresetChip(label = "Amex $89.99") {
                     testTitle = "American Express"
-                    testText = "Purchase authorized: $89.99 at AMAZON.COM*1A2B on card 4091."
+                    testText = "Purchase authorized: $89.99 at AMAZON.COM on card 4091."
                 }
             }
 
@@ -221,6 +216,9 @@ fun LiveTestPlayground(
                 enter = fadeIn() + expandVertically()
             ) {
                 if (testResult != null) {
+                    val isSkip = testResult.formattedMessage == "SKIP" || !testResult.isTransaction
+                    val accentColor = if (isSkip) StatusWarningFg else VaultTertiary
+
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -234,43 +232,62 @@ fun LiveTestPlayground(
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Emerald left accent pill
+                            // Left accent pill (Emerald for transaction, Amber for SKIP)
                             Box(
                                 modifier = Modifier
                                     .width(4.dp)
-                                    .height(42.dp)
+                                    .height(44.dp)
                                     .clip(RoundedCornerShape(2.dp))
-                                    .background(VaultTertiary)
+                                    .background(accentColor)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = testResult.formattedMessage,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (testResult.formattedMessage == "SKIP") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                                )
+                                if (isSkip) {
+                                    Text(
+                                        text = "Filtered non-transaction alert (SKIP)",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StatusWarningFg
+                                    )
+                                    Text(
+                                        text = "Verification code / non-transaction alert ignored",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                } else {
+                                    Text(
+                                        text = testResult.formattedMessage,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.DoneAll,
+                                        imageVector = if (isSkip) Icons.Default.FilterAlt else Icons.Default.DoneAll,
                                         contentDescription = null,
-                                        tint = VaultTertiary,
+                                        tint = accentColor,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Text(
-                                        text = if (testResult.isAiGenerated) "AI Parsed in ${testResult.latencyMs}ms" else "Regex Parsed in ${testResult.latencyMs}ms",
+                                        text = if (isSkip) {
+                                            if (testResult.isAiGenerated) "AI Filtered in ${testResult.latencyMs}ms" else "Regex Filtered in ${testResult.latencyMs}ms"
+                                        } else {
+                                            if (testResult.isAiGenerated) "AI Parsed in ${testResult.latencyMs}ms" else "Regex Parsed in ${testResult.latencyMs}ms"
+                                        },
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = VaultTertiary
+                                        color = accentColor
                                     )
                                 }
                             }
                         }
 
-                        if (testResult.formattedMessage != "SKIP" && destinationNumber.isNotBlank()) {
+                        if (!isSkip && destinationNumber.isNotBlank()) {
                             OutlinedButton(
                                 onClick = { onSendTestSms(testResult.formattedMessage) },
                                 shape = RoundedCornerShape(12.dp),
@@ -301,6 +318,6 @@ private fun PresetChip(label: String, onClick: () -> Unit) {
             containerColor = VaultSurfaceContainerHighest,
             labelColor = MaterialTheme.colorScheme.onSurface
         ),
-        border = androidx.compose.foundation.BorderStroke(1.dp, VaultOutlineVariant.copy(alpha = 0.3f))
+        border = BorderStroke(1.dp, VaultOutlineVariant.copy(alpha = 0.3f))
     )
 }

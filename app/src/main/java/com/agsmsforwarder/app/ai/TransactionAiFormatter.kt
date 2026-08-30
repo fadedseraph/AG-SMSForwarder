@@ -65,8 +65,6 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             try {
                 releaseModelInternal()
 
-                // MediaPipe maxTokens specifies TOTAL sequence length (prompt tokens + output tokens).
-                // Must be at least 512 to prevent native C++ buffer asserts / SIGABRT crashes.
                 val effectiveMaxTokens = maxOf(maxTokens, 512)
                 val effectiveTopK = if (topK in 1..100) topK else 40
                 val effectiveTemperature = if (temperature in 0f..2f) temperature else 0.2f
@@ -134,11 +132,11 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             _lastInferenceLatencyMs.value = latency
             Log.d(TAG, "AI Inference raw output (in ${latency}ms): '$rawOutput'")
 
-            val parsed = parseLlmResponse(rawOutput, notificationTitle, latency)
+            val parsed = parseLlmResponse(rawOutput, combinedInput, notificationTitle, latency)
             if (parsed != null) {
                 return@withContext parsed
             } else {
-                Log.w(TAG, "AI output could not be formatted. Falling back to Regex.")
+                Log.w(TAG, "AI output could not be parsed into transaction. Falling back to Regex.")
                 val fallback = RegexFallbackExtractor.extract(packageName, notificationTitle, notificationText)
                 return@withContext fallback.copy(latencyMs = latency)
             }
@@ -151,23 +149,30 @@ class TransactionAiFormatter private constructor(private val context: Context) {
     }
 
     /**
-     * Uses strict Gemma multi-turn few-shot formatting to eliminate conversational filler.
+     * Strict Gemma turn prompt with clear distinction between transactions and OTP/SKIP alerts.
      */
     private fun buildFewShotPrompt(systemPrompt: String, input: String): String {
         return buildString {
             append("<start_of_turn>user\n")
-            append("Instruction: $systemPrompt\n\n")
+            append("You are a financial transaction alert parser.\n")
+            append("Rule 1: If the notification is a purchase/charge/debit, output ONLY in this format: '<Bank>: $<Amount> spent at <Merchant>'\n")
+            append("Rule 2: If card digits are mentioned, append 'on card <Digits>'.\n")
+            append("Rule 3: If the alert is a verification code, OTP, security alert, login notification, or has NO money amount, you MUST output ONLY the single word: SKIP\n\n")
             append("Alert: Chase Mobile: Debit ending in 4102 charged \$42.50 at Trader Joe's.<end_of_turn>\n")
             append("<start_of_turn>model\n")
-            append("Chase: \$42.50 spent at Trader Joe's<end_of_turn>\n")
+            append("Chase: \$42.50 spent at Trader Joe's on card 4102<end_of_turn>\n")
             append("<start_of_turn>user\n")
             append("Alert: Bank of America: Alert: \$120.00 debit card purchase at SHELL OIL 5744.<end_of_turn>\n")
             append("<start_of_turn>model\n")
-            append("Bank of America: \$120.00 spent at Shell Oil<end_of_turn>\n")
+            append("Bank of America: \$120.00 spent at Shell Oil on card 5744<end_of_turn>\n")
             append("<start_of_turn>user\n")
-            append("Alert: Wells Fargo: Your OTP code is 849201 for login.<end_of_turn>\n")
+            append("Alert: Wells Fargo: Your one-time verification code is 849201 for login.<end_of_turn>\n")
             append("<start_of_turn>model\n")
             append("SKIP<end_of_turn>\n")
+            append("<start_of_turn>user\n")
+            append("Alert: American Express: Purchase authorized: \$89.99 at AMAZON.COM on card 4091.<end_of_turn>\n")
+            append("<start_of_turn>model\n")
+            append("American Express: \$89.99 spent at Amazon.com on card 4091<end_of_turn>\n")
             append("<start_of_turn>user\n")
             append("Alert: $input<end_of_turn>\n")
             append("<start_of_turn>model\n")
@@ -175,10 +180,14 @@ class TransactionAiFormatter private constructor(private val context: Context) {
     }
 
     /**
-     * Parses the LLM output robustly, extracting transaction details even if the model
-     * adds conversational preamble or formatting tags.
+     * Parses the LLM response with anti-hallucination validation against the original input.
      */
-    private fun parseLlmResponse(rawResponse: String, defaultBankName: String, latencyMs: Long): FormattedTransaction? {
+    private fun parseLlmResponse(
+        rawResponse: String,
+        rawInput: String,
+        defaultBankName: String,
+        latencyMs: Long
+    ): FormattedTransaction? {
         val cleanRaw = rawResponse.trim()
             .replace("<start_of_turn>model", "")
             .replace("<start_of_turn>", "")
@@ -191,19 +200,35 @@ class TransactionAiFormatter private constructor(private val context: Context) {
 
         val lines = cleanRaw.lines().map { it.trim() }.filter { it.isNotBlank() }
 
-        // Check for immediate SKIP
+        // 1. Explicit SKIP output
         if (lines.any { it.equals("SKIP", ignoreCase = true) || it.startsWith("SKIP", ignoreCase = true) }) {
             return FormattedTransaction.SKIP.copy(isAiGenerated = true, latencyMs = latencyMs)
         }
 
-        // Find candidate line that contains transaction details
+        // 2. Anti-Hallucination Check for Non-Transaction / OTP alerts
+        val inputLower = rawInput.lowercase()
+        val isNonTransactionPattern = inputLower.contains("code") ||
+                inputLower.contains("otp") ||
+                inputLower.contains("verification") ||
+                inputLower.contains("login") ||
+                inputLower.contains("password") ||
+                inputLower.contains("security") ||
+                inputLower.contains("temporary")
+
+        val hasAmountInInput = rawInput.contains("$") || Regex("""\b[0-9]{1,5}\.[0-9]{2}\b""").containsMatchIn(rawInput)
+
+        if (isNonTransactionPattern && !hasAmountInInput) {
+            Log.d(TAG, "Input matched non-transaction pattern without amount. Outputting SKIP.")
+            return FormattedTransaction.SKIP.copy(isAiGenerated = true, latencyMs = latencyMs)
+        }
+
+        // 3. Scan candidate lines for extracted transaction details
         for (line in lines) {
-            // Ignore conversational preambles
             if (line.startsWith("Sure,", ignoreCase = true) ||
                 line.startsWith("Here is", ignoreCase = true) ||
                 line.startsWith("Here's", ignoreCase = true) ||
                 line.startsWith("Extracted:", ignoreCase = true) ||
-                line.startsWith("Output:", ignoreCase = true) && !line.contains("$")
+                line.startsWith("Note:", ignoreCase = true)
             ) {
                 continue
             }
@@ -211,58 +236,68 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             var candidate = line
                 .replace("Output:", "", ignoreCase = true)
                 .replace("`", "")
+                .replace("[Bank]", defaultBankName.removeSuffix("Mobile").trim(), ignoreCase = true)
+                .replace("[Merchant]", "", ignoreCase = true)
+                .replace("[", "")
+                .replace("]", "")
                 .trim()
 
-            // Resolve placeholder brackets like "[Bank]" or "[Chase Mobile]"
-            val resolvedBank = if (candidate.contains("[Bank]", ignoreCase = true)) {
-                val cleanBank = defaultBankName.removeSuffix("Mobile").removeSuffix("App").trim().ifBlank { "Bank Alert" }
-                candidate = candidate.replace("[Bank]", cleanBank, ignoreCase = true)
-                cleanBank
-            } else {
-                candidate.substringBefore(":").replace("[", "").replace("]", "").trim()
-            }
-
-            candidate = candidate.replace("[", "").replace("]", "")
-
-            // Regex 1: "Bank: $42.50 spent at Trader Joe's"
-            val standardMatch = Regex("""^([^:]+):\s*\$([0-9]+(?:\.[0-9]{2})?)\s+spent\s+at\s+(.+)$""", RegexOption.IGNORE_CASE).find(candidate)
-            if (standardMatch != null) {
-                val (b, amt, merch) = standardMatch.destructured
-                return FormattedTransaction(
-                    bank = b.trim(),
-                    amount = amt.trim(),
-                    merchant = cleanMerchant(merch.trim()),
-                    isTransaction = true,
-                    formattedMessage = "${b.trim()}: \$${amt.trim()} spent at ${cleanMerchant(merch.trim())}",
-                    isAiGenerated = true,
-                    latencyMs = latencyMs
-                )
-            }
-
-            // Regex 2: Flexible extraction if line contains currency amount ($XX.XX)
+            // Check if candidate contains a currency amount
             val amountMatch = Regex("""\$([0-9]+(?:\.[0-9]{2})?)""").find(candidate)
             if (amountMatch != null) {
                 val amt = amountMatch.groupValues[1]
-                val merchantPart = when {
-                    candidate.contains("spent at ", ignoreCase = true) -> candidate.substringAfter("spent at ")
-                    candidate.contains("at ", ignoreCase = true) -> candidate.substringAfter("at ")
-                    candidate.contains("to ", ignoreCase = true) -> candidate.substringAfter("to ")
-                    else -> "Merchant"
-                }.substringBefore(" on card").substringBefore(".").trim()
 
-                val finalBank = if (resolvedBank.length in 2..30) resolvedBank else defaultBankName.ifBlank { "Bank Alert" }
-                val finalMerchant = cleanMerchant(merchantPart)
+                // Anti-Hallucination Guard: Ensure the extracted amount actually exists in the raw input notification!
+                if (!rawInput.contains(amt)) {
+                    Log.w(TAG, "Rejecting hallucinated amount $$amt not present in input: '$rawInput'")
+                    continue
+                }
+
+                val bankCandidate = candidate.substringBefore(":").trim()
+                val finalBank = if (bankCandidate.length in 2..30 &&
+                    !bankCandidate.contains("Amount", ignoreCase = true) &&
+                    !bankCandidate.contains("Bank", ignoreCase = true)
+                ) {
+                    bankCandidate
+                } else {
+                    defaultBankName.removeSuffix("Mobile").removeSuffix("App").trim().ifBlank { "Bank Alert" }
+                }
+
+                val afterColon = candidate.substringAfter(":", "").trim().ifBlank { candidate }
+                val merchantCandidate = when {
+                    afterColon.contains("spent at ", ignoreCase = true) -> afterColon.substringAfter("spent at ")
+                    afterColon.contains("at ", ignoreCase = true) -> afterColon.substringAfter("at ")
+                    afterColon.contains("to ", ignoreCase = true) -> afterColon.substringAfter("to ")
+                    else -> "Merchant"
+                }.substringBefore(" on card").trimEnd('.', ';', ',')
+
+                val cardSuffix = if (afterColon.contains("on card", ignoreCase = true)) {
+                    " on card " + afterColon.substringAfter("on card").trim().take(10)
+                } else if (rawInput.contains("ending in ", ignoreCase = true)) {
+                    val digits = Regex("""ending in (\d{2,6})""", RegexOption.IGNORE_CASE).find(rawInput)?.groupValues?.getOrNull(1)
+                    if (digits != null) " on card $digits" else ""
+                } else {
+                    ""
+                }
+
+                val finalMerchant = cleanMerchant(merchantCandidate)
+                val formatted = "$finalBank: \$$amt spent at $finalMerchant$cardSuffix".trim()
 
                 return FormattedTransaction(
                     bank = finalBank,
                     amount = amt,
                     merchant = finalMerchant,
                     isTransaction = true,
-                    formattedMessage = "$finalBank: \$$amt spent at $finalMerchant",
+                    formattedMessage = formatted,
                     isAiGenerated = true,
                     latencyMs = latencyMs
                 )
             }
+        }
+
+        // If no amount in input, return SKIP
+        if (!hasAmountInInput) {
+            return FormattedTransaction.SKIP.copy(isAiGenerated = true, latencyMs = latencyMs)
         }
 
         return null
