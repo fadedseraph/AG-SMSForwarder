@@ -9,6 +9,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.agsmsforwarder.app.SmsForwarderApp
+import com.agsmsforwarder.app.ai.DownloadState
+import com.agsmsforwarder.app.ai.ModelDownloadManager
 import com.agsmsforwarder.app.ai.ModelLoadState
 import com.agsmsforwarder.app.ai.TransactionAiFormatter
 import com.agsmsforwarder.app.data.db.AppDatabase
@@ -36,6 +38,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val aiFormatter = app.aiFormatter
     private val database = app.database
     private val smsDispatcher = SmsDispatcher(application)
+    private val modelDownloadManager = ModelDownloadManager(application)
+
+    val downloadState: StateFlow<DownloadState> = modelDownloadManager.downloadState
 
     val preferences: StateFlow<AppPreferences> = preferencesRepo.preferencesFlow
         .stateIn(
@@ -140,6 +145,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 e.printStackTrace()
             }
         }
+    }
+
+    fun startModelDownload(url: String, fileName: String, token: String?) {
+        viewModelScope.launch {
+            val result = modelDownloadManager.downloadModel(url, fileName, token)
+            result.onSuccess { downloadedFile ->
+                val fullPath = downloadedFile.absolutePath
+                preferencesRepo.setModelFilePath(fullPath)
+                val prefs = preferences.value
+                aiFormatter.initializeModel(
+                    modelPath = fullPath,
+                    temperature = prefs.aiTemperature,
+                    topK = prefs.aiTopK,
+                    maxTokens = prefs.aiMaxTokens
+                )
+            }
+        }
+    }
+
+    fun cancelModelDownload() {
+        modelDownloadManager.cancelDownload()
+    }
+
+    fun resetDownloadState() {
+        modelDownloadManager.resetState()
     }
 
     fun loadModelFromDirectPath(path: String) {

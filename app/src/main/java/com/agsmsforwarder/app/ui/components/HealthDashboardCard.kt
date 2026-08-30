@@ -47,6 +47,9 @@ import com.agsmsforwarder.app.ui.theme.StatusSuccessFg
 import com.agsmsforwarder.app.ui.theme.StatusWarningBg
 import com.agsmsforwarder.app.ui.theme.StatusWarningFg
 
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.FolderOpen
+
 @Composable
 fun HealthDashboardCard(
     hasSmsPermission: Boolean,
@@ -58,6 +61,7 @@ fun HealthDashboardCard(
     onOpenNotificationAccessSettings: () -> Unit,
     onRequestBatteryExemption: () -> Unit,
     onSelectModelFile: () -> Unit,
+    onOpenModelDownloader: () -> Unit,
     onOpenAiSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -131,6 +135,7 @@ fun HealthDashboardCard(
                 modelLoadState = modelLoadState,
                 lastLatencyMs = lastLatencyMs,
                 onSelectModelFile = onSelectModelFile,
+                onOpenModelDownloader = onOpenModelDownloader,
                 onOpenAiSettings = onOpenAiSettings
             )
         }
@@ -208,6 +213,7 @@ private fun AiEngineStatusCard(
     modelLoadState: ModelLoadState,
     lastLatencyMs: Long,
     onSelectModelFile: () -> Unit,
+    onOpenModelDownloader: () -> Unit,
     onOpenAiSettings: () -> Unit
 ) {
     Card(
@@ -301,16 +307,24 @@ private fun AiEngineStatusCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
             ) {
-                FilledTonalButton(
+                OutlinedButton(
                     onClick = onSelectModelFile,
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text(
-                        text = if (modelLoadState is ModelLoadState.Loaded) "Change Model File" else "Select Model (.task/.bin)",
-                        style = MaterialTheme.typography.labelSmall
-                    )
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Pick File", style = MaterialTheme.typography.labelSmall)
+                }
+
+                FilledTonalButton(
+                    onClick = onOpenModelDownloader,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Download Model", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

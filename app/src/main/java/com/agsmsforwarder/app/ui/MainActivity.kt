@@ -101,6 +101,7 @@ class MainActivity : ComponentActivity() {
                     val preferences by viewModel.preferences.collectAsState()
                     val logs by viewModel.logs.collectAsState()
                     val modelLoadState by viewModel.modelLoadState.collectAsState()
+                    val downloadState by viewModel.downloadState.collectAsState()
                     val lastLatencyMs by viewModel.lastLatencyMs.collectAsState()
                     val isTesting by viewModel.isTesting.collectAsState()
                     val testResult by viewModel.testResult.collectAsState()
@@ -109,6 +110,7 @@ class MainActivity : ComponentActivity() {
                         preferences = preferences,
                         logs = logs,
                         modelLoadState = modelLoadState,
+                        downloadState = downloadState,
                         lastLatencyMs = lastLatencyMs,
                         hasSmsPermission = hasSmsPermission,
                         hasNotificationAccess = hasNotificationAccess,
@@ -120,6 +122,12 @@ class MainActivity : ComponentActivity() {
                         onRequestBatteryExemption = { requestBatteryOptimizationExemption() },
                         onSelectModelFile = {
                             modelPickerLauncher.launch(arrayOf("*/*"))
+                        },
+                        onStartDownload = { url, fileName, token ->
+                            viewModel.startModelDownload(url, fileName, token)
+                        },
+                        onCancelDownload = {
+                            viewModel.cancelModelDownload()
                         },
                         onToggleService = { viewModel.setServiceEnabled(it) },
                         onUpdateDestinationNumber = { viewModel.setDestinationPhoneNumber(it) },

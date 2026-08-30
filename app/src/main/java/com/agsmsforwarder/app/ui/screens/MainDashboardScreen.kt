@@ -52,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.agsmsforwarder.app.ai.DownloadState
 import com.agsmsforwarder.app.ai.ModelLoadState
 import com.agsmsforwarder.app.data.db.TransactionLogEntity
 import com.agsmsforwarder.app.data.model.FormattedTransaction
@@ -60,6 +61,7 @@ import com.agsmsforwarder.app.ui.components.AdvancedAiDialog
 import com.agsmsforwarder.app.ui.components.BankSelectorDialog
 import com.agsmsforwarder.app.ui.components.HealthDashboardCard
 import com.agsmsforwarder.app.ui.components.LiveTestPlayground
+import com.agsmsforwarder.app.ui.components.ModelDownloaderDialog
 import com.agsmsforwarder.app.ui.components.TransactionLogsCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,6 +70,7 @@ fun MainDashboardScreen(
     preferences: AppPreferences,
     logs: List<TransactionLogEntity>,
     modelLoadState: ModelLoadState,
+    downloadState: DownloadState,
     lastLatencyMs: Long,
     hasSmsPermission: Boolean,
     hasNotificationAccess: Boolean,
@@ -78,6 +81,8 @@ fun MainDashboardScreen(
     onOpenNotificationAccessSettings: () -> Unit,
     onRequestBatteryExemption: () -> Unit,
     onSelectModelFile: () -> Unit,
+    onStartDownload: (url: String, fileName: String, token: String?) -> Unit,
+    onCancelDownload: () -> Unit,
     onToggleService: (Boolean) -> Unit,
     onUpdateDestinationNumber: (String) -> Unit,
     onToggleAiFormatting: (Boolean) -> Unit,
@@ -90,6 +95,7 @@ fun MainDashboardScreen(
 ) {
     var showBankDialog by remember { mutableStateOf(false) }
     var showAiConfigDialog by remember { mutableStateOf(false) }
+    var showModelDownloaderDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -144,6 +150,7 @@ fun MainDashboardScreen(
                 onOpenNotificationAccessSettings = onOpenNotificationAccessSettings,
                 onRequestBatteryExemption = onRequestBatteryExemption,
                 onSelectModelFile = onSelectModelFile,
+                onOpenModelDownloader = { showModelDownloaderDialog = true },
                 onOpenAiSettings = { showAiConfigDialog = true }
             )
 
@@ -317,6 +324,15 @@ fun MainDashboardScreen(
             initialSystemPrompt = preferences.customSystemPrompt,
             onSave = onUpdateAiParameters,
             onDismiss = { showAiConfigDialog = false }
+        )
+    }
+
+    if (showModelDownloaderDialog) {
+        ModelDownloaderDialog(
+            downloadState = downloadState,
+            onStartDownload = onStartDownload,
+            onCancelDownload = onCancelDownload,
+            onDismiss = { showModelDownloaderDialog = false }
         )
     }
 }
