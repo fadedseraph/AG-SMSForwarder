@@ -132,7 +132,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             _lastInferenceLatencyMs.value = latency
             Log.d(TAG, "AI Inference raw output (in ${latency}ms): '$rawOutput'")
 
-            val parsed = parseLlmResponse(rawOutput, combinedInput, notificationTitle, latency)
+            val parsed = parseLlmResponse(rawOutput, combinedInput, packageName, notificationTitle, latency)
             if (parsed != null) {
                 return@withContext parsed
             } else {
@@ -149,7 +149,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
     }
 
     /**
-     * Strict Gemma turn prompt with support for purchases, spending with balance, balance updates, and OTP skips.
+     * Strict Gemma turn prompt with comprehensive few-shot demonstrations for purchases, spending with balance, and pure balance updates.
      */
     private fun buildFewShotPrompt(systemPrompt: String, input: String): String {
         return buildString {
@@ -159,14 +159,14 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             append("Rule 2: If card digits are mentioned, append 'on card <Digits>'.\n")
             append("Rule 3: If an updated account balance is included in the purchase alert, append '. Balance: $<Balance>'.\n")
             append("Rule 4: If the alert is purely an account balance update (no purchase), output: '<Bank>: Balance is $<Amount>'\n")
-            append("Rule 5: If the alert is a verification code, OTP, security alert, login notification, or has NO money amount, you MUST output ONLY the single word: SKIP\n\n")
+            append("Rule 5: If the alert is a verification code, OTP, security alert, login notification, reward ad, or has NO money amount, you MUST output ONLY the single word: SKIP\n\n")
             append("Alert: Chase Mobile: Debit ending in 4102 charged \$42.50 at Trader Joe's.<end_of_turn>\n")
             append("<start_of_turn>model\n")
             append("Chase: \$42.50 spent at Trader Joe's on card 4102<end_of_turn>\n")
             append("<start_of_turn>user\n")
-            append("Alert: Chime: You spent \$15.50 at Target. Your new checking balance is \$230.30.<end_of_turn>\n")
+            append("Alert: You spent \$56.14: Your new Chime account balance is \$1,317.32 after your purchase at Walmart.<end_of_turn>\n")
             append("<start_of_turn>model\n")
-            append("Chime: \$15.50 spent at Target. Balance: \$230.30<end_of_turn>\n")
+            append("Chime: \$56.14 spent at Walmart. Balance: \$1,317.32<end_of_turn>\n")
             append("<start_of_turn>user\n")
             append("Alert: Chime: Here's your morning money update: your checking balance is \$245.80.<end_of_turn>\n")
             append("<start_of_turn>model\n")
@@ -190,11 +190,12 @@ class TransactionAiFormatter private constructor(private val context: Context) {
     }
 
     /**
-     * Parses the LLM response with anti-hallucination validation against the original input.
+     * Parses the LLM response with robust anti-hallucination validation and comma-aware currency regexes.
      */
     private fun parseLlmResponse(
         rawResponse: String,
         rawInput: String,
+        packageName: String,
         defaultBankName: String,
         latencyMs: Long
     ): FormattedTransaction? {
@@ -223,17 +224,18 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                 inputLower.contains("login") ||
                 inputLower.contains("password") ||
                 inputLower.contains("security") ||
-                inputLower.contains("temporary")
+                inputLower.contains("temporary") ||
+                (inputLower.contains("cash back") && !rawInput.contains("$"))
 
-        val hasAmountInInput = rawInput.contains("$") || Regex("""\b[0-9]{1,5}\.[0-9]{2}\b""").containsMatchIn(rawInput)
+        val hasAmountInInput = rawInput.contains("$") || Regex("""\b[0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?\b""").containsMatchIn(rawInput)
 
         if (isNonTransactionPattern && !hasAmountInInput) {
             Log.d(TAG, "Input matched non-transaction pattern without amount. Outputting SKIP.")
             return FormattedTransaction.SKIP.copy(isAiGenerated = true, latencyMs = latencyMs)
         }
 
-        // Detect balance in input or candidate
-        val balanceRegex = Regex("""(?:balance(?:\s+is)?|bal:?|checking balance(?:\s+is)?|new balance(?:\s+is)?)\s*:?\s*\$?([0-9]{1,5}(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
+        // Robust currency regex supporting commas (e.g. $1,317.32 or $56.14)
+        val balanceRegex = Regex("""(?:account\s+balance|checking\s+balance|new\s+balance|balance|bal)(?:\s+is)?\s*:?\s*\$?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
         val balanceMatchInInput = balanceRegex.find(rawInput)
 
         val hasPurchaseIntent = rawInput.contains("spent", ignoreCase = true) ||
@@ -263,30 +265,21 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                 .replace("]", "")
                 .trim()
 
-            // Check if candidate contains a currency amount
-            val amountMatch = Regex("""\$([0-9]+(?:\.[0-9]{2})?)""").find(candidate)
+            // Currency match with comma support: $1,317.32 or $56.14
+            val amountRegex = Regex("""\$([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""")
+            val amountMatch = amountRegex.find(candidate) ?: amountRegex.find(rawInput)
+
             if (amountMatch != null) {
                 val amt = amountMatch.groupValues[1]
 
                 // Anti-Hallucination Guard: Ensure the extracted amount actually exists in the raw input notification!
-                if (!rawInput.contains(amt)) {
+                if (!rawInput.contains(amt) && !rawInput.contains(amt.replace(",", ""))) {
                     Log.w(TAG, "Rejecting hallucinated amount $$amt not present in input: '$rawInput'")
                     continue
                 }
 
                 val bankCandidate = candidate.substringBefore(":").trim()
-                val finalBank = if (bankCandidate.length in 2..30 &&
-                    !bankCandidate.contains("Amount", ignoreCase = true) &&
-                    !bankCandidate.contains("Bank", ignoreCase = true) &&
-                    !bankCandidate.contains("Balance", ignoreCase = true)
-                ) {
-                    bankCandidate
-                } else if (rawInput.contains("chime", ignoreCase = true)) {
-                    "Chime"
-                } else {
-                    defaultBankName.removeSuffix("Mobile").removeSuffix("App").trim().ifBlank { "Bank Alert" }
-                }
-
+                val finalBank = resolveBankName(packageName, defaultBankName, rawInput, bankCandidate)
                 val afterColon = candidate.substringAfter(":", "").trim().ifBlank { candidate }
 
                 // Check if this is purely a balance update
@@ -318,10 +311,18 @@ class TransactionAiFormatter private constructor(private val context: Context) {
 
                 val merchantCandidate = when {
                     afterColon.contains("spent at ", ignoreCase = true) -> afterColon.substringAfter("spent at ")
+                    afterColon.contains("purchase at ", ignoreCase = true) -> afterColon.substringAfter("purchase at ")
                     afterColon.contains("at ", ignoreCase = true) -> afterColon.substringAfter("at ")
                     afterColon.contains("to ", ignoreCase = true) -> afterColon.substringAfter("to ")
+                    rawInput.contains("purchase at ", ignoreCase = true) -> rawInput.substringAfter("purchase at ")
+                    rawInput.contains("at ", ignoreCase = true) -> rawInput.substringAfter("at ")
                     else -> "Merchant"
-                }.substringBefore(" on card").substringBefore(". Balance").substringBefore(" Balance:").trimEnd('.', ';', ',')
+                }
+                    .substringBefore(" on card")
+                    .substringBefore(". Balance")
+                    .substringBefore(" Balance:")
+                    .substringBefore(" after your purchase")
+                    .trimEnd('.', ';', ',', '!')
 
                 val cardSuffix = if (afterColon.contains("on card", ignoreCase = true)) {
                     " on card " + afterColon.substringAfter("on card").substringBefore(". Balance").substringBefore(" Balance:").trim().take(10)
@@ -332,7 +333,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                     ""
                 }
 
-                val balanceSuffix = if (detectedBalance != null && detectedBalance != amt && rawInput.contains(detectedBalance)) {
+                val balanceSuffix = if (detectedBalance != null && detectedBalance != amt && (rawInput.contains(detectedBalance) || rawInput.contains(detectedBalance.replace(",", "")))) {
                     ". Balance: \$$detectedBalance"
                 } else {
                     ""
@@ -359,6 +360,33 @@ class TransactionAiFormatter private constructor(private val context: Context) {
         }
 
         return null
+    }
+
+    private fun resolveBankName(packageName: String, defaultBankName: String, rawInput: String, candidateBank: String?): String {
+        val inputLower = rawInput.lowercase()
+        val packageLower = packageName.lowercase()
+        return when {
+            packageLower.contains("chime") || inputLower.contains("chime") -> "Chime"
+            packageLower.contains("chase") || inputLower.contains("chase") -> "Chase"
+            packageLower.contains("bofa") || inputLower.contains("bank of america") -> "Bank of America"
+            packageLower.contains("wellsfargo") || inputLower.contains("wells fargo") -> "Wells Fargo"
+            packageLower.contains("citi") || inputLower.contains("citibank") -> "Citi"
+            packageLower.contains("capitalone") || inputLower.contains("capital one") -> "Capital One"
+            packageLower.contains("americanexpress") || inputLower.contains("amex") -> "Amex"
+            packageLower.contains("discover") || inputLower.contains("discover") -> "Discover"
+            packageLower.contains("usbank") || inputLower.contains("u.s. bank") -> "U.S. Bank"
+            packageLower.contains("pnc") || inputLower.contains("pnc bank") -> "PNC"
+            packageLower.contains("revolut") || inputLower.contains("revolut") -> "Revolut"
+            packageLower.contains("monzo") || inputLower.contains("monzo") -> "Monzo"
+            packageLower.contains("venmo") || inputLower.contains("venmo") -> "Venmo"
+            packageLower.contains("paypal") || inputLower.contains("paypal") -> "PayPal"
+            !candidateBank.isNullOrBlank() && candidateBank.length in 2..30 &&
+                    !candidateBank.contains("Amount", ignoreCase = true) &&
+                    !candidateBank.contains("Bank", ignoreCase = true) &&
+                    !candidateBank.contains("Balance", ignoreCase = true) -> candidateBank
+            defaultBankName.isNotBlank() && defaultBankName.length <= 25 -> defaultBankName.removeSuffix("Mobile").removeSuffix("App").trim()
+            else -> "Bank Alert"
+        }
     }
 
     private fun cleanMerchant(raw: String): String {
