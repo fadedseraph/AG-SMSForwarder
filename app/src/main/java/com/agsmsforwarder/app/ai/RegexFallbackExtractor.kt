@@ -33,7 +33,9 @@ object RegexFallbackExtractor {
         "statement available",
         "special offer",
         "reward points balance",
-        "scheduled maintenance"
+        "scheduled maintenance",
+        "spotme limit",
+        "friend request"
     )
 
     fun extract(
@@ -81,8 +83,15 @@ object RegexFallbackExtractor {
                 lower.contains("paid") ||
                 lower.contains("authorized")
 
+        val hasDepositIntent = lower.contains("deposit") ||
+                lower.contains("received") ||
+                lower.contains("refund") ||
+                lower.contains("sent you") ||
+                lower.contains("transfer from") ||
+                lower.contains("hit your account")
+
         // 4. Pure balance update alert (e.g. Chime morning money update)
-        val isPureBalanceUpdate = !hasPurchaseIntent && (
+        val isPureBalanceUpdate = !hasPurchaseIntent && !hasDepositIntent && (
                 lower.contains("balance is") ||
                 lower.contains("money update") ||
                 lower.contains("checking balance") ||
@@ -121,7 +130,11 @@ object RegexFallbackExtractor {
         val balanceSuffix = if (detectedBalance != null && detectedBalance != amount) ". Balance: \$$detectedBalance" else ""
 
         val cleanMerchant = merchant ?: "Merchant"
-        val formattedMsg = "$bank: \$$amount spent at $cleanMerchant$balanceSuffix"
+        val formattedMsg = if (hasDepositIntent) {
+            "$bank: \$$amount received from $cleanMerchant$balanceSuffix"
+        } else {
+            "$bank: \$$amount spent at $cleanMerchant$balanceSuffix"
+        }
 
         return FormattedTransaction(
             bank = bank,

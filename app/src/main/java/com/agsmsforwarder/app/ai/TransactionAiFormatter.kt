@@ -156,10 +156,23 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             append("<start_of_turn>user\n")
             append("You are a financial notification alert parser.\n")
             append("Rule 1: If the alert is a purchase/charge, output ONLY in this format: '<Bank>: $<Amount> spent at <Merchant>'\n")
-            append("Rule 2: If card digits are mentioned, append 'on card <Digits>'.\n")
-            append("Rule 3: If an updated account balance is included in the purchase alert, append '. Balance: $<Balance>'.\n")
-            append("Rule 4: If the alert is purely an account balance update (no purchase), output: '<Bank>: Balance is $<Amount>'\n")
-            append("Rule 5: If the alert is a verification code, OTP, security alert, login notification, reward ad, or has NO money amount, you MUST output ONLY the single word: SKIP\n\n")
+            append("Rule 2: If the alert is a deposit, refund, or receiving money, output ONLY in this format: '<Bank>: $<Amount> received from <Sender>'\n")
+            append("Rule 3: If card digits are mentioned, append 'on card <Digits>'.\n")
+            append("Rule 4: If an updated account balance is included in the purchase alert, append '. Balance: $<Balance>'.\n")
+            append("Rule 5: If the alert is purely an account balance update (no purchase), output: '<Bank>: Balance is $<Amount>'\n")
+            append("Rule 6: If the alert is a verification code, OTP, security alert, login notification, reward ad, or has NO money amount, you MUST output ONLY the single word: SKIP\n\n")
+            append("Alert: Direct deposit of $1,000.00 from Employer XYZ is now available.<end_of_turn>\n")
+            append("<start_of_turn>model\n")
+            append("Chime: $1,000.00 received from Employer XYZ<end_of_turn>\n")
+            append("<start_of_turn>user\n")
+            append("Alert: John Doe sent you $20.00.<end_of_turn>\n")
+            append("<start_of_turn>model\n")
+            append("Chime: $20.00 received from John Doe<end_of_turn>\n")
+            append("<start_of_turn>user\n")
+            append("Alert: Your SpotMe limit is now $40.<end_of_turn>\n")
+            append("<start_of_turn>model\n")
+            append("SKIP<end_of_turn>\n")
+            append("<start_of_turn>user\n")
             append("Alert: Chase Mobile: Debit ending in 4102 charged \$42.50 at Trader Joe's.<end_of_turn>\n")
             append("<start_of_turn>model\n")
             append("Chase: \$42.50 spent at Trader Joe's on card 4102<end_of_turn>\n")
@@ -245,6 +258,13 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                 rawInput.contains("paid", ignoreCase = true) ||
                 rawInput.contains("authorized", ignoreCase = true)
 
+        val hasDepositIntent = rawInput.contains("deposit", ignoreCase = true) ||
+                rawInput.contains("received", ignoreCase = true) ||
+                rawInput.contains("refund", ignoreCase = true) ||
+                rawInput.contains("sent you", ignoreCase = true) ||
+                rawInput.contains("transfer from", ignoreCase = true) ||
+                rawInput.contains("hit your account", ignoreCase = true)
+
         // 3. Scan candidate lines for extracted transaction details
         for (line in lines) {
             if (line.startsWith("Sure,", ignoreCase = true) ||
@@ -310,6 +330,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                     ?: balanceMatchInInput?.groupValues?.getOrNull(1)
 
                 val merchantCandidate = when {
+                    afterColon.contains("received from ", ignoreCase = true) -> afterColon.substringAfter("received from ")
                     afterColon.contains("spent at ", ignoreCase = true) -> afterColon.substringAfter("spent at ")
                     afterColon.contains("purchase at ", ignoreCase = true) -> afterColon.substringAfter("purchase at ")
                     afterColon.contains("at ", ignoreCase = true) -> afterColon.substringAfter("at ")
@@ -340,7 +361,11 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                 }
 
                 val finalMerchant = cleanMerchant(merchantCandidate)
-                val formatted = "$finalBank: \$$amt spent at $finalMerchant$cardSuffix$balanceSuffix".trim()
+                val formatted = if (hasDepositIntent) {
+                    "$finalBank: \$$amt received from $finalMerchant$balanceSuffix".trim()
+                } else {
+                    "$finalBank: \$$amt spent at $finalMerchant$cardSuffix$balanceSuffix".trim()
+                }
 
                 return FormattedTransaction(
                     bank = finalBank,
