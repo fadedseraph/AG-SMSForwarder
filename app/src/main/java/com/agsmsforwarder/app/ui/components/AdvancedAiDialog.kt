@@ -43,7 +43,7 @@ fun AdvancedAiDialog(
 ) {
     var temperature by remember { mutableFloatStateOf(initialTemperature) }
     var topK by remember { mutableIntStateOf(initialTopK) }
-    var maxTokens by remember { mutableIntStateOf(initialMaxTokens) }
+    var maxTokens by remember { mutableIntStateOf(maxOf(initialMaxTokens, 1024)) }
     var systemPrompt by remember { mutableStateOf(initialSystemPrompt) }
 
     val scrollState = rememberScrollState()
@@ -101,18 +101,18 @@ fun AdvancedAiDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Max Tokens Slider
+                // Max Tokens Slider (Sequence Length / Context Window)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Max Tokens: $maxTokens", style = MaterialTheme.typography.bodyMedium)
+                    Text("Sequence Length: $maxTokens tokens", style = MaterialTheme.typography.bodyMedium)
                 }
                 Slider(
                     value = maxTokens.toFloat(),
-                    onValueChange = { maxTokens = it.roundToInt() },
-                    valueRange = 256f..2048f,
+                    onValueChange = { maxTokens = (it / 256).roundToInt() * 256 },
+                    valueRange = 512f..4096f,
                     steps = 13
                 )
 
@@ -140,7 +140,7 @@ fun AdvancedAiDialog(
                     onClick = {
                         temperature = 0.2f
                         topK = 40
-                        maxTokens = 128
+                        maxTokens = 1024
                         systemPrompt = AppPreferences.DEFAULT_SYSTEM_PROMPT
                     }
                 ) {

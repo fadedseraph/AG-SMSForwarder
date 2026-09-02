@@ -55,7 +55,7 @@ class AppPreferencesRepository(private val context: Context) {
                 modelFilePath = preferences[Keys.MODEL_FILE_PATH] ?: "",
                 aiTemperature = preferences[Keys.AI_TEMPERATURE] ?: 0.2f,
                 aiTopK = preferences[Keys.AI_TOP_K] ?: 40,
-                aiMaxTokens = maxOf(preferences[Keys.AI_MAX_TOKENS] ?: 512, 512),
+                aiMaxTokens = maxOf(preferences[Keys.AI_MAX_TOKENS] ?: 1024, 1024),
                 customSystemPrompt = preferences[Keys.CUSTOM_SYSTEM_PROMPT] ?: AppPreferences.DEFAULT_SYSTEM_PROMPT
             )
         }
