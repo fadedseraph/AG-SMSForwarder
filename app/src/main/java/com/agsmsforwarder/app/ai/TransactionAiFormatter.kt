@@ -41,7 +41,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
         modelPath: String,
         temperature: Float = 0.2f,
         topK: Int = 40,
-        maxTokens: Int = 512
+        maxTokens: Int = 1024
     ): Result<Unit> = withContext(Dispatchers.Default) {
         mutex.withLock {
             if (modelPath.isBlank()) {
@@ -149,7 +149,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
     }
 
     /**
-     * Strict Gemma turn prompt with comprehensive few-shot demonstrations for purchases, spending with balance, and pure balance updates.
+     * Strict Gemma turn prompt with concise few-shot demonstrations for purchases, spending with balance, and pure balance updates.
      */
     private fun buildFewShotPrompt(systemPrompt: String, input: String): String {
         return buildString {
@@ -187,7 +187,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
     }
 
     /**
-     * Parses the LLM response with robust anti-hallucination validation and comma-aware currency regexes.
+     * Parses the LLM response with robust amount isolation, anti-hallucination validation, and comma-aware currency regexes.
      */
     private fun parseLlmResponse(
         rawResponse: String,
@@ -231,7 +231,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
             return FormattedTransaction.SKIP.copy(isAiGenerated = true, latencyMs = latencyMs)
         }
 
-        // Robust currency regex supporting commas (e.g. $1,317.32 or $56.14)
+        // Robust balance regex supporting commas (e.g. $1,317.32 or $56.14)
         val balanceRegex = Regex("""(?:account\s+balance|checking\s+balance|new\s+balance|balance|bal)(?:\s+is)?\s*:?\s*\$?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
         val balanceMatchInInput = balanceRegex.find(rawInput)
 
@@ -269,13 +269,29 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                 .replace("]", "")
                 .trim()
 
-            // Currency match with comma support: $1,317.32 or $56.14
-            val amountRegex = Regex("""\$([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""")
-            val amountMatch = amountRegex.find(candidate) ?: amountRegex.find(rawInput)
+            // Isolate Balance vs Spent amount
+            val balanceCandidateMatch = balanceRegex.find(candidate)
+            val detectedBalance = balanceCandidateMatch?.groupValues?.getOrNull(1)
+                ?: balanceMatchInInput?.groupValues?.getOrNull(1)
 
-            if (amountMatch != null) {
-                val amt = amountMatch.groupValues[1]
+            val spentRegex = Regex("""(?:spent|purchase(?:\s+of)?|charged|debit(?:\s+of)?|paid|deposit(?:\s+of)?|received|for)\s*\$?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
+            val spentMatch = spentRegex.find(candidate)?.groupValues?.getOrNull(1)
+                ?: spentRegex.find(rawInput)?.groupValues?.getOrNull(1)
 
+            val allAmounts = Regex("""\$([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""").findAll(candidate)
+                .map { it.groupValues[1] }
+                .toList()
+                .ifEmpty {
+                    Regex("""\$([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""").findAll(rawInput)
+                        .map { it.groupValues[1] }
+                        .toList()
+                }
+
+            val amt = spentMatch
+                ?: (if ((hasPurchaseIntent || hasDepositIntent) && detectedBalance != null) allAmounts.firstOrNull { it != detectedBalance } else null)
+                ?: allAmounts.firstOrNull()
+
+            if (amt != null) {
                 // Anti-Hallucination Guard: Ensure the extracted amount actually exists in the raw input notification!
                 if (!rawInput.contains(amt) && !rawInput.contains(amt.replace(",", ""))) {
                     Log.w(TAG, "Rejecting hallucinated amount $$amt not present in input: '$rawInput'")
@@ -287,7 +303,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                 val afterColon = candidate.substringAfter(":", "").trim().ifBlank { candidate }
 
                 // Check if this is purely a balance update
-                val isPureBalanceUpdate = !hasPurchaseIntent && (
+                val isPureBalanceUpdate = !hasPurchaseIntent && !hasDepositIntent && (
                         candidate.contains("balance is", ignoreCase = true) ||
                         candidate.contains("balance update", ignoreCase = true) ||
                         rawInput.contains("money update", ignoreCase = true) ||
@@ -295,7 +311,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                 )
 
                 if (isPureBalanceUpdate) {
-                    val finalAmt = balanceMatchInInput?.groupValues?.getOrNull(1) ?: amt
+                    val finalAmt = detectedBalance ?: amt
                     val formatted = "$finalBank: Balance is \$$finalAmt"
                     return FormattedTransaction(
                         bank = finalBank,
@@ -308,11 +324,7 @@ class TransactionAiFormatter private constructor(private val context: Context) {
                     )
                 }
 
-                // Otherwise, spending transaction
-                val balanceCandidateMatch = balanceRegex.find(candidate)
-                val detectedBalance = balanceCandidateMatch?.groupValues?.getOrNull(1)
-                    ?: balanceMatchInInput?.groupValues?.getOrNull(1)
-
+                // Spending or Deposit transaction
                 val merchantCandidate = when {
                     afterColon.contains("received from ", ignoreCase = true) -> afterColon.substringAfter("received from ")
                     afterColon.contains("spent at ", ignoreCase = true) -> afterColon.substringAfter("spent at ")

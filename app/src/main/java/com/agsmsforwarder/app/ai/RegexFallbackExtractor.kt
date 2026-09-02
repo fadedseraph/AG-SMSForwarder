@@ -9,7 +9,7 @@ object RegexFallbackExtractor {
     private val AMOUNT_PATTERNS = listOf(
         Pattern.compile("""(?:\$|USD\s*|CAD\s*|AUD\s*|EUR\s*|€|GBP\s*|£|INR\s*|₹)\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""", Pattern.CASE_INSENSITIVE),
         Pattern.compile("""([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)\s*(?:USD|CAD|AUD|EUR|GBP|INR)""", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("""(?:amount|for|spent|paid|purchase of|debit of|charged|balance is|balance of)\s*(?:of)?\s*\$?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""", Pattern.CASE_INSENSITIVE)
+        Pattern.compile("""(?:amount|for|spent|paid|purchase of|debit of|charged|deposit of|received|balance is|balance of)\s*(?:of)?\s*\$?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""", Pattern.CASE_INSENSITIVE)
     )
 
     // Regex patterns for detecting merchant name after keywords like "at", "to", "from"
@@ -18,6 +18,7 @@ object RegexFallbackExtractor {
         Pattern.compile("""purchase\s+(?:of\s+\$[0-9\.,]+\s+)?at\s+([A-Za-z0-9\s\.\*\#\-\_&']{2,40})""", Pattern.CASE_INSENSITIVE),
         Pattern.compile("""charged\s+\$[0-9\.,]+\s+at\s+([A-Za-z0-9\s\.\*\#\-\_&']{2,40})""", Pattern.CASE_INSENSITIVE),
         Pattern.compile("""paid\s+to\s+([A-Za-z0-9\s\.\*\#\-\_&']{2,40})""", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("""received\s+from\s+([A-Za-z0-9\s\.\*\#\-\_&']{2,40})""", Pattern.CASE_INSENSITIVE),
         Pattern.compile("""merchant:\s*([A-Za-z0-9\s\.\*\#\-\_&']{2,40})""", Pattern.CASE_INSENSITIVE)
     )
 
@@ -33,9 +34,7 @@ object RegexFallbackExtractor {
         "statement available",
         "special offer",
         "reward points balance",
-        "scheduled maintenance",
-        "spotme limit",
-        "friend request"
+        "scheduled maintenance"
     )
 
     fun extract(
@@ -58,24 +57,12 @@ object RegexFallbackExtractor {
         // 2. Extract Bank Name
         val bank = resolveBankName(packageName, notificationTitle, combinedText)
 
-        // 3. Extract Amount
-        var amount: String? = null
-        for (pattern in AMOUNT_PATTERNS) {
-            val matcher = pattern.matcher(combinedText)
-            if (matcher.find()) {
-                val matched = matcher.group(1)?.trim()
-                if (!matched.isNullOrBlank()) {
-                    amount = matched
-                    break
-                }
-            }
-        }
+        // 3. Balance detection
+        val balanceRegex = Regex("""(?:account\s+balance|checking\s+balance|new\s+balance|balance|bal)(?:\s+is)?\s*:?\s*\$?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
+        val balanceMatch = balanceRegex.find(combinedText)
+        val detectedBalance = balanceMatch?.groupValues?.getOrNull(1)
 
-        if (amount == null) {
-            // Cannot find transaction amount -> Skip
-            return FormattedTransaction.SKIP
-        }
-
+        // 4. Intent detection
         val hasPurchaseIntent = lower.contains("spent") ||
                 lower.contains("purchase") ||
                 lower.contains("charged") ||
@@ -90,7 +77,24 @@ object RegexFallbackExtractor {
                 lower.contains("transfer from") ||
                 lower.contains("hit your account")
 
-        // 4. Pure balance update alert (e.g. Chime morning money update)
+        // 5. Transaction amount extraction (isolating from balance amount)
+        val spentRegex = Regex("""(?:spent|purchase(?:\s+of)?|charged|debit(?:\s+of)?|paid|deposit(?:\s+of)?|received|for)\s*\$?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
+        val spentMatch = spentRegex.find(combinedText)?.groupValues?.getOrNull(1)
+
+        val allAmounts = Regex("""\$([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""").findAll(combinedText)
+            .map { it.groupValues[1] }
+            .toList()
+
+        val amount = spentMatch
+            ?: (if ((hasPurchaseIntent || hasDepositIntent) && detectedBalance != null) allAmounts.firstOrNull { it != detectedBalance } else null)
+            ?: allAmounts.firstOrNull()
+
+        if (amount == null) {
+            // Cannot find transaction amount -> Skip
+            return FormattedTransaction.SKIP
+        }
+
+        // 6. Pure balance update alert (e.g. Chime morning money update)
         val isPureBalanceUpdate = !hasPurchaseIntent && !hasDepositIntent && (
                 lower.contains("balance is") ||
                 lower.contains("money update") ||
@@ -99,10 +103,11 @@ object RegexFallbackExtractor {
         )
 
         if (isPureBalanceUpdate) {
-            val formattedMsg = "$bank: Balance is $$amount"
+            val finalAmt = detectedBalance ?: amount
+            val formattedMsg = "$bank: Balance is $$finalAmt"
             return FormattedTransaction(
                 bank = bank,
-                amount = amount,
+                amount = finalAmt,
                 merchant = "Account Balance",
                 isTransaction = true,
                 formattedMessage = formattedMsg,
@@ -111,7 +116,7 @@ object RegexFallbackExtractor {
             )
         }
 
-        // 5. Spending transaction: Extract Merchant & optional balance suffix
+        // 7. Spending or Deposit transaction: Extract Merchant & optional balance suffix
         var merchant: String? = null
         for (pattern in MERCHANT_PATTERNS) {
             val matcher = pattern.matcher(combinedText)
@@ -124,9 +129,6 @@ object RegexFallbackExtractor {
             }
         }
 
-        val balanceRegex = Regex("""(?:account\s+balance|checking\s+balance|new\s+balance|balance|bal)(?:\s+is)?\s*:?\s*\$?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?|[0-9]+(?:\.[0-9]{2})?)""", RegexOption.IGNORE_CASE)
-        val balanceMatch = balanceRegex.find(combinedText)
-        val detectedBalance = balanceMatch?.groupValues?.getOrNull(1)
         val balanceSuffix = if (detectedBalance != null && detectedBalance != amount) ". Balance: \$$detectedBalance" else ""
 
         val cleanMerchant = merchant ?: "Merchant"
